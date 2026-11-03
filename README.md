@@ -1,7 +1,7 @@
 # joho
 ## 教材
 
-- [Google Colab で Python を学ぶための手引き](colab-python-guide.md)
+- [Google Colab で Python を学ぶための手引き](colab-python-guide.md)（[印刷用 PDF](colab-python-guide.pdf)）
 - [練習用ノートブック 第1回](notebooks/python_practice_01.ipynb)
 
 ## Google Classroom 用 授業教材（全10回）
