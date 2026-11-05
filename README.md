@@ -10,7 +10,6 @@
 
 - [授業ガイド（教員用）](classroom/README.md)
 - [生徒配布用ノートブック](classroom/lessons/)
-- [解答例（教員用）](classroom/answers/)
 
 ## Python 作品ギャラリー（Colab でできることの紹介）
 
