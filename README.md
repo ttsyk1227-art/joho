@@ -11,3 +11,10 @@
 - [授業ガイド（教員用）](classroom/README.md)
 - [生徒配布用ノートブック](classroom/lessons/)
 - [解答例（教員用）](classroom/answers/)
+
+## Python 作品ギャラリー（Colab でできることの紹介）
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ttsyk1227-art/joho/blob/main/showcase/python_showcase.ipynb)
+
+音楽・フラクタル・シミュレーション・データ分析・Web API・機械学習・画像処理・3D グラフなど、
+Python と Colab で作れる 11 の作品例です → [showcase/python_showcase.ipynb](showcase/python_showcase.ipynb)
