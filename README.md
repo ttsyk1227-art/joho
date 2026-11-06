@@ -17,3 +17,9 @@
 
 音楽・フラクタル・シミュレーション・データ分析・Web API・機械学習・画像処理・3D グラフなど、
 Python と Colab で作れる 11 の作品例です → [showcase/python_showcase.ipynb](showcase/python_showcase.ipynb)
+
+## Python ゲームサンプル
+
+- [どら焼きキャッチゲーム](games/README.md)：青いネコ型ロボットを ← → キーで動かし、落ちてくるどら焼きを受け取るゲーム。お邪魔アイテム（爆弾）・ハイスコア保存・効果音つき
+  - [tkinter 版](games/dorayaki_catch.py)（パソコンの Python で実行）
+  - [pygame 版](games/web/main.py)（パソコン・**ブラウザ**で実行。[ブラウザで遊ぶ](https://ttsyk1227-art.github.io/joho/dorayaki/)）

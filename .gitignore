@@ -1,0 +1,4 @@
+games/highscore.txt
+__pycache__/
+games/web/build/
+games/web/highscore.txt
