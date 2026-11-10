@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>フローチャート・トレーサー（情報Ⅰ）</title>
+<style>
+:root {
+  --bg: #f4f5f8; --panel: #ffffff; --ink: #1d2330; --sub: #5d6678; --line: #d5d9e2;
+  --node: #ffffff; --stroke: #3b4558; --cur: #ffc94d; --cur-ink: #2a1c00; --cur-line: #b97700;
+  --pend: #2f6fed; --hover: #dbe7ff; --ok: #188a4c; --ng: #c8322b; --chg: #ffe7a6;
+  --code-bg: #f8f9fb; --btn: #2f6fed; --btn-ink: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171d; --panel: #1e222b; --ink: #e8ebf2; --sub: #9aa3b5; --line: #353b48;
+    --node: #262b36; --stroke: #aab3c5; --cur: #f2b632; --cur-ink: #201500; --cur-line: #ffdd8a;
+    --pend: #7aa7ff; --hover: #2c3b5c; --ok: #4fce8b; --ng: #ff7a72; --chg: #6b5310;
+    --code-bg: #181b22; --btn: #4d84f5; --btn-ink: #ffffff;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif;
+  font-size: 15px; line-height: 1.6; display: flex; flex-direction: column;
+}
+header { padding: 10px 16px 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
+h1 { font-size: 18px; margin: 0 0 6px; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.bar label { color: var(--sub); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+select, input[type=number], input[type=text] {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px;
+}
+input[type=number] { width: 84px; }
+input.list { width: 190px; }
+#desc { margin: 6px 0 0; color: var(--sub); font-size: 13px; }
+#inputErr { color: var(--ng); font-size: 13px; }
+
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; padding: 12px 16px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.panel h2 { font-size: 13px; margin: 0; padding: 6px 12px; color: var(--sub); border-bottom: 1px solid var(--line); font-weight: 600; }
+#flowPanel { display: flex; flex-direction: column; min-height: 0; }
+#flowWrap { flex: 1; overflow: auto; padding: 10px; text-align: center; position: relative; }
+#flowWrap svg { max-width: 100%; height: auto; }
+#side { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
+
+/* フローチャート */
+.node .shape { fill: var(--node); stroke: var(--stroke); stroke-width: 1.6; transition: fill .15s; }
+.node text { fill: var(--ink); font-size: 13.5px; }
+.node { cursor: default; }
+.node.hover .shape { fill: var(--hover); }
+.node.cur .shape { fill: var(--cur); stroke: var(--cur-line); stroke-width: 3; }
+.node.cur text { fill: var(--cur-ink); font-weight: 700; }
+.node.pend .shape { stroke: var(--pend); stroke-width: 3; stroke-dasharray: 6 4; }
+.edge { fill: none; stroke: var(--stroke); stroke-width: 1.5; }
+.ahead { fill: var(--stroke); }
+.blabel { fill: var(--sub); font-size: 12.5px; }
+.blabel.taken { fill: var(--cur-line); font-weight: 700; font-size: 14px; }
+
+/* Python */
+#code { margin: 0; padding: 8px 0; background: var(--code-bg); border-radius: 0 0 10px 10px; overflow-x: auto;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 14px; line-height: 1.7; }
+.ln { display: flex; white-space: pre; padding: 0 12px 0 0; border-left: 4px solid transparent; }
+.ln .no { width: 34px; text-align: right; padding-right: 10px; color: var(--sub); user-select: none; flex: none; }
+.ln.hover { background: var(--hover); }
+.ln.cur { background: var(--cur); color: var(--cur-ink); border-left-color: var(--cur-line); font-weight: 700; }
+.ln.cur .no { color: var(--cur-ink); }
+.ln.pend { border-left-color: var(--pend); }
+
+/* 変数・出力 */
+#vars { padding: 8px 12px; min-height: 52px; }
+#vars table { border-collapse: collapse; }
+#vars th { text-align: left; font-family: Consolas, Menlo, monospace; font-weight: 600; padding: 3px 14px 3px 0; vertical-align: middle; }
+#vars td { padding: 3px 0; }
+.val { display: inline-block; min-width: 44px; text-align: center; padding: 1px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font-family: Consolas, Menlo, monospace; font-size: 15px; }
+.val.chg, .cell.chg b { background: var(--chg); border-color: var(--cur-line); font-weight: 700; }
+.cells { display: inline-flex; gap: 3px; }
+.cell { display: inline-flex; flex-direction: column; align-items: center; font-family: Consolas, Menlo, monospace; }
+.cell i { font-style: normal; font-size: 11px; color: var(--sub); line-height: 1.2; }
+.cell b { font-weight: 400; min-width: 34px; text-align: center; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; }
+.empty { color: var(--sub); font-size: 13px; }
+#out { margin: 0; padding: 8px 12px; min-height: 40px; font-family: Consolas, Menlo, monospace; font-size: 14px; white-space: pre-wrap; }
+
+/* 操作 */
+footer { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 16px 10px; }
+#msg { min-height: 28px; font-size: 15px; font-weight: 600; }
+#msg .ok { color: var(--ok); } #msg .ng { color: var(--ng); }
+#quiz { display: none; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 6px; padding: 6px 10px;
+  border: 2px dashed var(--pend); border-radius: 8px; }
+#quiz.on { display: flex; }
+#quiz input { width: 110px; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button.main { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); font-weight: 700; padding: 6px 20px; }
+button:disabled { opacity: .45; cursor: default; }
+#slider { flex: 1; min-width: 120px; }
+#count, #score { font-size: 13px; color: var(--sub); white-space: nowrap; }
+.ctl label { font-size: 13px; color: var(--sub); display: inline-flex; align-items: center; gap: 4px; }
+.hint { font-size: 12px; color: var(--sub); margin-top: 4px; }
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  main { grid-template-columns: 1fr; }
+  #flowWrap { max-height: 58vh; }
+  #flowWrap svg { max-width: none; }
+  #side { overflow: visible; }
+  footer { position: sticky; bottom: 0; }
+  .hint { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>フローチャート・トレーサー <span style="font-size:13px;font-weight:400;color:var(--sub)">― 1ステップずつ動かして、Python と見くらべよう</span></h1>
+  <div class="bar">
+    <label>例題 <select id="exSel"></select></label>
+    <span id="inputs" class="bar"></span>
+    <span id="inputErr"></span>
+  </div>
+  <p id="desc"></p>
+</header>
+
+<main>
+  <section class="panel" id="flowPanel">
+    <h2>フローチャート</h2>
+    <div id="flowWrap"></div>
+  </section>
+  <div id="side">
+    <section class="panel"><h2>Python プログラム</h2><div id="code"></div></section>
+    <section class="panel"><h2>変数の値</h2><div id="vars"></div></section>
+    <section class="panel"><h2>表示（出力）</h2><pre id="out"></pre></section>
+  </div>
+</main>
+
+<footer>
+  <div id="msg"></div>
+  <div id="quiz"></div>
+  <div class="ctl">
+    <button id="bFirst" title="最初へ">⏮ 最初へ</button>
+    <button id="bPrev" title="1つ戻る（←）">◀ 戻る</button>
+    <button id="bNext" class="main" title="1つ進む（→）">次へ ▶</button>
+    <button id="bPlay" title="自動で進める（スペース）">▶ 自動再生</button>
+    <label>速さ <select id="speed"><option value="1400">ゆっくり</option><option value="800" selected>ふつう</option><option value="350">はやい</option></select></label>
+    <input type="range" id="slider" min="0" max="0" value="0" aria-label="ステップ">
+    <span id="count"></span>
+    <label><input type="checkbox" id="predict"> 予想モード</label>
+    <span id="score"></span>
+  </div>
+  <div class="hint">キーボード：→ 次へ ／ ← 戻る ／ スペース 自動再生。図の記号にマウスを重ねると、対応する Python の行が光ります。</div>
+</footer>
+
+<script>
+'use strict';
+/* =====================================================================
+   例題の書き方
+   A(図の文, Pythonの行, 実行内容)            … 処理（長方形）
+   IN(変数名, 図の文, Pythonの行)             … 入力（平行四辺形）
+   OUT(図の文, Pythonの行, 表示する文字列)     … 表示（平行四辺形）
+   IF(図の条件, Pythonの条件, 判定, Yesの処理, Noの処理)   … 判断（ひし形）
+   WHILE(図の条件, Pythonの条件, 判定, 繰り返す処理)       … ループ端
+   FOR(変数名, 図の文, Pythonの行, 初めの値, 終わりの値, 繰り返す処理)
+   図の文・Pythonの行は、入力値 inp を受け取る関数にもできる。
+   ===================================================================== */
+const A = (fc, py, run) => ({ t: 'assign', fc, py, run });
+const IN = (name, fc, py) => ({ t: 'input', name, fc, py });
+const OUT = (fc, py, val) => ({ t: 'output', fc, py, val });
+const IF = (fc, py, cond, then, els = [], elif = false) => ({ t: 'if', fc, py, cond, then, els, elif });
+const WHILE = (fc, py, cond, body) => ({ t: 'while', fc, py, cond, body });
+const FOR = (v, fc, py, from, to, body) => ({ t: 'for', v, fc, py, from, to, body });
+
+const EXAMPLES = [
+  {
+    title: '① 順次：長方形の面積と周の長さ',
+    desc: '上から順番に1つずつ実行する「順次構造」。変数に値が入っていくようすを確かめよう。',
+    inputs: [{ name: 'width', label: 'よこ', def: 8, min: 1, max: 100 }, { name: 'height', label: 'たて', def: 5, min: 1, max: 100 }],
+    body: () => [
+      IN('width', 'width を入力', 'width = int(input("よこ: "))'),
+      IN('height', 'height を入力', 'height = int(input("たて: "))'),
+      A('area ← width × height', 'area = width * height', e => { e.area = e.width * e.height; }),
+      A('around ←\n(width + height) × 2', 'around = (width + height) * 2', e => { e.around = (e.width + e.height) * 2; }),
+      OUT('area を表示', 'print("面積:", area)', e => `面積: ${e.area}`),
+      OUT('around を表示', 'print("周の長さ:", around)', e => `周の長さ: ${e.around}`),
+    ],
+  },
+  {
+    title: '② 分岐：偶数か奇数か',
+    desc: '条件によって進む道が分かれる「分岐構造」。n を変えて、Yes と No の両方を通ってみよう。',
+    inputs: [{ name: 'n', label: 'n', def: 7, min: 0, max: 999 }],
+    body: () => [
+      IN('n', 'n を入力', 'n = int(input("整数: "))'),
+      A('r ← n ÷ 2 の余り', 'r = n % 2', e => { e.r = e.n % 2; }),
+      IF('r = 0', 'r == 0', e => e.r === 0,
+        [OUT('「偶数」と表示', 'print("偶数")', () => '偶数')],
+        [OUT('「奇数」と表示', 'print("奇数")', () => '奇数')]),
+    ],
+  },
+  {
+    title: '③ 分岐：点数から評価（A・B・C）',
+    desc: '分岐を重ねて3つに分ける。Python では elif を使う（第4回の例題）。',
+    inputs: [{ name: 'score', label: '点数', def: 72, min: 0, max: 100 }],
+    body: () => [
+      IN('score', 'score を入力', 'score = int(input("点数: "))'),
+      IF('score ≧ 80', 'score >= 80', e => e.score >= 80,
+        [OUT('「A」と表示', 'print("A")', () => 'A')],
+        [IF('score ≧ 60', 'score >= 60', e => e.score >= 60,
+          [OUT('「B」と表示', 'print("B")', () => 'B')],
+          [OUT('「C」と表示', 'print("C")', () => 'C')], true)]),
+    ],
+  },
+  {
+    title: '④ 反復（for）：3の倍数の合計',
+    desc: '決まった回数だけ繰り返す「反復構造」。繰り返しの中に分岐が入っている（第5回の例題）。',
+    inputs: [{ name: 'n', label: 'いくつまで', def: 10, min: 1, max: 30 }],
+    body: () => [
+      IN('n', 'n を入力', 'n = int(input("いくつまで: "))'),
+      A('total ← 0', 'total = 0', e => { e.total = 0; }),
+      FOR('i', 'i を 1 から n まで\n1 ずつ増やしながら', 'for i in range(1, n + 1):', () => 1, e => e.n, [
+        IF('i ÷ 3 の余り = 0', 'i % 3 == 0', e => e.i % 3 === 0,
+          [A('total ← total + i', 'total += i', e => { e.total += e.i; })]),
+      ]),
+      OUT('total を表示', 'print("3の倍数の合計:", total)', e => `3の倍数の合計: ${e.total}`),
+    ],
+  },
+  {
+    title: '⑤ 反復（while）：貯金が目標額になる日',
+    desc: '条件が成り立つ間だけ繰り返す。何回繰り返すかは、やってみるまで分からない（第6回の例題）。',
+    inputs: [{ name: 'goal', label: '目標額', def: 2000, min: 500, max: 10000, step: 500 }],
+    body: () => [
+      IN('goal', 'goal を入力', 'goal = int(input("目標額: "))'),
+      A('money ← 0', 'money = 0', e => { e.money = 0; }),
+      A('day ← 0', 'day = 0', e => { e.day = 0; }),
+      WHILE('money ＜ goal の間', 'money < goal', e => e.money < e.goal, [
+        A('day ← day + 1', 'day += 1', e => { e.day += 1; }),
+        A('money ← money + 500', 'money += 500', e => { e.money += 500; }),
+      ]),
+      OUT('day と money を表示', 'print(f"{day}日目に{money}円になります。")', e => `${e.day}日目に${e.money}円になります。`),
+    ],
+  },
+  {
+    title: '⑥ リスト：最大値を求める',
+    desc: 'リスト（配列）を先頭から順に調べ、「今までの最大」を更新していく（第7回の応用課題）。',
+    inputs: [{ name: 'scores', label: 'scores', list: true, def: [72, 85, 90, 64, 78] }],
+    body: () => [
+      A(inp => `scores ←\n[${inp.scores.join(', ')}]`, inp => `scores = [${inp.scores.join(', ')}]`, (e, inp) => { e.scores = inp.scores.slice(); }),
+      A('n ← scores の要素数', 'n = len(scores)', e => { e.n = e.scores.length; }),
+      A('biggest ← scores[0]', 'biggest = scores[0]', e => { e.biggest = e.scores[0]; }),
+      FOR('i', 'i を 1 から n−1 まで\n1 ずつ増やしながら', 'for i in range(1, n):', () => 1, e => e.n - 1, [
+        IF('scores[i] ＞ biggest', 'scores[i] > biggest', e => e.scores[e.i] > e.biggest,
+          [A('biggest ← scores[i]', 'biggest = scores[i]', e => { e.biggest = e.scores[e.i]; })]),
+      ]),
+      OUT('biggest を表示', 'print("最大値:", biggest)', e => `最大値: ${e.biggest}`),
+    ],
+  },
+  {
+    title: '⑦ 探索：線形探索',
+    desc: 'リストの先頭から1つずつ調べて、探している値（target）の場所を見つける。',
+    inputs: [{ name: 'data', label: 'data', list: true, def: [14, 3, 27, 8, 19] }, { name: 'target', label: '探す値', def: 27, min: -999, max: 999 }],
+    body: () => [
+      A(inp => `data ←\n[${inp.data.join(', ')}]`, inp => `data = [${inp.data.join(', ')}]`, (e, inp) => { e.data = inp.data.slice(); }),
+      IN('target', 'target を入力', 'target = int(input("探す値: "))'),
+      A('n ← data の要素数', 'n = len(data)', e => { e.n = e.data.length; }),
+      A('found ← −1', 'found = -1', e => { e.found = -1; }),
+      FOR('i', 'i を 0 から n−1 まで\n1 ずつ増やしながら', 'for i in range(0, n):', () => 0, e => e.n - 1, [
+        IF('data[i] = target', 'data[i] == target', e => e.data[e.i] === e.target,
+          [A('found ← i', 'found = i', e => { e.found = e.i; })]),
+      ]),
+      IF('found ≧ 0', 'found >= 0', e => e.found >= 0,
+        [OUT('found を表示', 'print(f"data[{found}] にあります")', e => `data[${e.found}] にあります`)],
+        [OUT('「見つかりません」\nと表示', 'print("見つかりません")', () => '見つかりません')]),
+    ],
+  },
+  {
+    title: '⑧ 整列：バブルソート（発展）',
+    desc: 'となり同士をくらべて、順番が逆なら入れかえる。二重の繰り返しの動きを追ってみよう。',
+    inputs: [{ name: 'data', label: 'data', list: true, def: [5, 2, 8, 3] }],
+    body: () => [
+      A(inp => `data ←\n[${inp.data.join(', ')}]`, inp => `data = [${inp.data.join(', ')}]`, (e, inp) => { e.data = inp.data.slice(); }),
+      A('n ← data の要素数', 'n = len(data)', e => { e.n = e.data.length; }),
+      FOR('i', 'i を 0 から n−2 まで\n1 ずつ増やしながら', 'for i in range(0, n - 1):', () => 0, e => e.n - 2, [
+        FOR('j', 'j を 0 から n−2−i まで\n1 ずつ増やしながら', 'for j in range(0, n - 1 - i):', () => 0, e => e.n - 2 - e.i, [
+          IF('data[j] ＞ data[j+1]', 'data[j] > data[j + 1]', e => e.data[e.j] > e.data[e.j + 1], [
+            A('tmp ← data[j]', 'tmp = data[j]', e => { e.tmp = e.data[e.j]; }),
+            A('data[j] ← data[j+1]', 'data[j] = data[j + 1]', e => { e.data[e.j] = e.data[e.j + 1]; }),
+            A('data[j+1] ← tmp', 'data[j + 1] = tmp', e => { e.data[e.j + 1] = e.tmp; }),
+          ]),
+        ]),
+      ]),
+      OUT('data を表示', 'print(data)', e => `[${e.data.join(', ')}]`),
+    ],
+  },
+];
+
+/* ---------- 準備：ノードに番号・表示文をつける ---------- */
+const STEP_LIMIT = 3000;
+let prog, inp, T = [], idx = 0, lineOf = {};
+let playing = null, predict = false, pending = false, fb = null, answered = new Set(), score = { ok: 0, n: 0 };
+
+function prepare(block, st) {
+  for (const n of block) {
+    n.id = 'n' + (st.id++);
+    const s = x => (typeof x === 'function' ? x(inp) : x);
+    n.pyText = s(n.py);
+    let fc = s(n.fc);
+    if (n.t === 'for' || n.t === 'while') { n.loopName = 'ループ' + (++st.loop); fc = n.loopName + '\n' + fc; n.endId = n.id + 'e'; }
+    n.lines = fc.split('\n');
+    n.fcText = s(n.fc).replace(/\n/g, ' ');
+    if (n.then) prepare(n.then, st);
+    if (n.els) prepare(n.els, st);
+    if (n.body) prepare(n.body, st);
+  }
+}
+
+/* ---------- 実行して、全ステップの記録（トレース）を作る ---------- */
+const fmt = v => Array.isArray(v) ? '[' + v.join(', ') + ']' : (typeof v === 'string' ? '"' + v + '"' : String(v));
+
+function diffEnv(a, b) {           // b で変わった所の一覧
+  const ch = [];
+  for (const k of Object.keys(b)) {
+    if (Array.isArray(b[k]) && Array.isArray(a[k]) && a[k].length === b[k].length) {
+      b[k].forEach((v, i) => { if (v !== a[k][i]) ch.push({ name: k, i, label: `${k}[${i}]`, val: v }); });
+    } else if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) ch.push({ name: k, label: k, val: b[k], isNew: !(k in a) });
+  }
+  return ch;
+}
+
+function buildTrace() {
+  const env = {}, out = [], S = [];
+  const snap = (id, msg, extra = {}) => {
+    if (S.length >= STEP_LIMIT) throw new Error('limit');
+    S.push({ id, env: JSON.parse(JSON.stringify(env)), out: out.slice(), msg, ...extra });
+  };
+  const exec = block => {
+    for (const n of block) {
+      if (n.t === 'assign') {
+        const before = JSON.parse(JSON.stringify(env));
+        n.run(env, inp);
+        const ch = diffEnv(before, env);
+        const msg = ch.length ? ch.map(c => `${c.label} が ${fmt(c.val)} になった`).join('、')
+          : '代入したが、値は前と同じだった';
+        let q = null;
+        if (ch.length === 1 && !Array.isArray(ch[0].val)) q = { kind: 'value', label: ch[0].label, answer: ch[0].val };
+        snap(n.id, msg, { q });
+      } else if (n.t === 'input') {
+        env[n.name] = inp[n.name];
+        snap(n.id, `${n.name} に ${fmt(env[n.name])} が入力された`);
+      } else if (n.t === 'output') {
+        const s = n.val(env); out.push(s);
+        snap(n.id, `「${s}」と表示した`);
+      } else if (n.t === 'if') {
+        const r = !!n.cond(env);
+        snap(n.id, `条件「${n.fcText}」は${r ? '成り立つ → Yes へ進む' : '成り立たない → No へ進む'}`,
+          { branch: r ? 'yes' : 'no', q: { kind: 'yn', text: `条件「${n.fcText}」は成り立つ？`, answer: r } });
+        exec(r ? n.then : n.els);
+      } else if (n.t === 'while') {
+        for (;;) {
+          const r = !!n.cond(env);
+          const c = n.fcText.replace(/ の間$/, '');
+          snap(n.id, r ? `条件「${c}」が成り立つので、繰り返しの中へ進む` : `条件「${c}」が成り立たないので、繰り返しを終わる`,
+            { q: { kind: 'yn', text: `条件「${c}」は成り立つ？（繰り返しを続ける？）`, answer: r } });
+          if (!r) break;
+          exec(n.body);
+          snap(n.endId, `${n.loopName} の先頭に戻って、条件をもう一度調べる`);
+        }
+      } else if (n.t === 'for') {
+        const a = n.from(env), b = n.to(env);
+        if (a > b) { snap(n.id, `繰り返す範囲がない（${a} から ${b}）ので、1回も繰り返さない`); continue; }
+        for (let k = a; k <= b; k++) {
+          env[n.v] = k;
+          snap(n.id, k === a ? `${n.v} を ${a} にして、繰り返しを始める（${b} まで）` : `${n.v} を 1 増やして ${k} にする`);
+          exec(n.body);
+          snap(n.endId, k < b ? `${n.loopName} の先頭に戻る` : `${n.v} が ${b} まで進んだので、${n.loopName} を終わる`);
+        }
+      }
+    }
+  };
+  snap('start', '「次へ ▶」を押して、1ステップずつ進めよう');
+  try { exec(prog); snap('end', 'プログラムが終了した'); }
+  catch (err) {
+    if (err.message !== 'limit') throw err;
+    S.push({ id: S[S.length - 1].id, env: S[S.length - 1].env, out: S[S.length - 1].out, msg: `ステップ数が ${STEP_LIMIT} をこえたので、ここで打ち切りました（入力を小さくしてください）` });
+  }
+  return S;
+}
+
+/* ---------- Python プログラムを作る ---------- */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function buildPython() {
+  const L = []; lineOf = {};
+  const add = (text, ind, ids) => { for (const id of ids) lineOf[id] = L.length; L.push({ text: '    '.repeat(ind) + text, ids }); };
+  const genIf = (n, ind, kw) => {
+    add(`${kw} ${n.pyText}:`, ind, [n.id]);
+    gen(n.then, ind + 1);
+    if (!n.els.length) return;
+    if (n.els.length === 1 && n.els[0].t === 'if' && n.els[0].elif) genIf(n.els[0], ind, 'elif');
+    else { add('else:', ind, []); gen(n.els, ind + 1); }
+  };
+  const gen = (block, ind) => {
+    for (const n of block) {
+      if (n.t === 'if') genIf(n, ind, 'if');
+      else if (n.t === 'while') { add(`while ${n.pyText}:`, ind, [n.id, n.endId]); gen(n.body, ind + 1); }
+      else if (n.t === 'for') { add(n.pyText, ind, [n.id, n.endId]); gen(n.body, ind + 1); }
+      else add(n.pyText, ind, [n.id]);
+    }
+  };
+  gen(prog, 0);
+  document.getElementById('code').innerHTML = L.map((l, i) =>
+    `<div class="ln" data-line="${i}" data-ids="${l.ids.join(' ')}"><span class="no">${i + 1}</span><span>${esc(l.text)}</span></div>`).join('');
+}
+
+/* ---------- フローチャートを描く ---------- */
+const W = 200, GY = 28, GX = 36, DH = 74, HE = 38, TH = 36, TW = 120;
+
+function measureBlock(b) {
+  let L = 0, R = 0, h = 0;
+  b.forEach((n, i) => { measureNode(n); L = Math.max(L, n.m.L); R = Math.max(R, n.m.R); h += n.m.h + (i ? GY : 0); });
+  return (b.m = { L, R, h });
+}
+function measureNode(n) {
+  const own = Math.max(44, 22 + n.lines.length * 18);
+  if (n.t === 'if') {
+    const t = measureBlock(n.then), e = measureBlock(n.els);
+    if (!n.els.length) {
+      const bx = Math.max(t.R, W / 2) + 34;
+      n.m = { L: Math.max(t.L, W / 2), R: bx + 8, h: DH + GY + t.h + GY, bx };
+    } else {
+      const dl = Math.max(t.R + GX / 2, W / 2 + 28), dr = Math.max(e.L + GX / 2, W / 2 + 28);
+      n.m = { L: dl + t.L, R: dr + e.R, h: DH + GY + Math.max(t.h, e.h) + GY, dl, dr };
+    }
+  } else if (n.t === 'for' || n.t === 'while') {
+    const b = measureBlock(n.body);
+    n.m = { L: Math.max(W / 2, b.L), R: Math.max(W / 2, b.R), h: own + GY + (b.h ? b.h + GY : 0) + HE, hs: own };
+  } else n.m = { L: W / 2, R: W / 2, h: own };
+}
+
+function drawFlow() {
+  const P = [];   // SVG の部品
+  const line = (pts, arrow) => {
+    P.push(`<polyline class="edge" points="${pts.map(p => p.join(',')).join(' ')}"/>`);
+    if (!arrow) return;
+    const [x1, y1] = pts[pts.length - 2], [x2, y2] = pts[pts.length - 1];
+    const a = Math.atan2(y2 - y1, x2 - x1), s = 8, c = Math.cos(a), d = Math.sin(a);
+    P.push(`<polygon class="ahead" points="${x2},${y2} ${x2 - s * c + s * .45 * d},${y2 - s * d - s * .45 * c} ${x2 - s * c - s * .45 * d},${y2 - s * d + s * .45 * c}"/>`);
+  };
+  const text = (lines, cx, cy) => {
+    const y0 = cy - (lines.length - 1) * 9;
+    return `<text text-anchor="middle" dominant-baseline="central">` +
+      lines.map((l, i) => `<tspan x="${cx}" y="${y0 + i * 18}">${esc(l)}</tspan>`).join('') + '</text>';
+  };
+  const shape = (id, kind, cx, y, w, h, lines) => {
+    const x = cx - w / 2; let s;
+    const poly = pts => `<polygon class="shape" points="${pts.map(p => p.join(',')).join(' ')}"/>`;
+    if (kind === 'term') s = `<rect class="shape" x="${x}" y="${y}" width="${w}" height="${h}" rx="${h / 2}"/>`;
+    else if (kind === 'io') s = poly([[x + 16, y], [x + w, y], [x + w - 16, y + h], [x, y + h]]);
+    else if (kind === 'if') s = poly([[cx, y], [x + w, y + h / 2], [cx, y + h], [x, y + h / 2]]);
+    else if (kind === 'ls') s = poly([[x + 14, y], [x + w - 14, y], [x + w, y + 14], [x + w, y + h], [x, y + h], [x, y + 14]]);
+    else if (kind === 'le') s = poly([[x, y], [x + w, y], [x + w, y + h - 14], [x + w - 14, y + h], [x + 14, y + h], [x, y + h - 14]]);
+    else s = `<rect class="shape" x="${x}" y="${y}" width="${w}" height="${h}"/>`;
+    P.push(`<g class="node" data-id="${id}">${s}${text(lines, cx, y + h / 2)}</g>`);
+  };
+  const label = (id, which, x, y, anchor) =>
+    P.push(`<text class="blabel" id="lb-${id}-${which}" x="${x}" y="${y}" text-anchor="${anchor}">${which === 'yes' ? 'Yes' : 'No'}</text>`);
+
+  const placeBlock = (b, cx, y) => {
+    b.forEach((n, i) => { if (i) { line([[cx, y], [cx, y + GY]], true); y += GY; } y = placeNode(n, cx, y); });
+    return y;
+  };
+  const placeNode = (n, cx, y) => {
+    if (n.t === 'if') {
+      shape(n.id, 'if', cx, y, W, DH, n.lines);
+      const ym = y + DH / 2, yb = y + DH, yM = y + n.m.h;
+      if (!n.els.length) {
+        line([[cx, yb], [cx, yb + GY]], true);
+        label(n.id, 'yes', cx + 8, yb + 15, 'start');
+        const yT = placeBlock(n.then, cx, yb + GY);
+        line([[cx, yT], [cx, yM]]);
+        line([[cx + W / 2, ym], [cx + n.m.bx, ym], [cx + n.m.bx, yM - GY / 2], [cx, yM - GY / 2]], true);
+        label(n.id, 'no', cx + W / 2 + 4, ym - 7, 'start');
+      } else {
+        const xl = cx - n.m.dl, xr = cx + n.m.dr;
+        line([[cx - W / 2, ym], [xl, ym], [xl, yb + GY]], true);
+        label(n.id, 'yes', cx - W / 2 - 2, ym - 7, 'end');
+        const yT = placeBlock(n.then, xl, yb + GY);
+        line([[xl, yT], [xl, yM - GY / 2], [cx, yM - GY / 2]]);
+        line([[cx + W / 2, ym], [xr, ym], [xr, yb + GY]], true);
+        label(n.id, 'no', cx + W / 2 + 2, ym - 7, 'start');
+        const yE = placeBlock(n.els, xr, yb + GY);
+        line([[xr, yE], [xr, yM - GY / 2], [cx, yM - GY / 2]]);
+        line([[cx, yM - GY / 2], [cx, yM]]);
+      }
+      return yM;
+    }
+    if (n.t === 'for' || n.t === 'while') {
+      shape(n.id, 'ls', cx, y, W, n.m.hs, n.lines);
+      let y2 = y + n.m.hs;
+      line([[cx, y2], [cx, y2 + GY]], true); y2 += GY;
+      if (n.body.length) { y2 = placeBlock(n.body, cx, y2); line([[cx, y2], [cx, y2 + GY]], true); y2 += GY; }
+      shape(n.endId, 'le', cx, y2, W, HE, [n.loopName]);
+      return y2 + HE;
+    }
+    const kind = (n.t === 'input' || n.t === 'output') ? 'io' : 'proc';
+    shape(n.id, kind, cx, y, W, n.m.h, n.lines);
+    return y + n.m.h;
+  };
+
+  const m = measureBlock(prog), pad = 14;
+  const cx = pad + Math.max(m.L, TW / 2), width = cx + Math.max(m.R, TW / 2) + pad;
+  let y = pad;
+  shape('start', 'term', cx, y, TW, TH, ['はじめ']); y += TH;
+  line([[cx, y], [cx, y + GY]], true); y += GY;
+  y = placeBlock(prog, cx, y);
+  line([[cx, y], [cx, y + GY]], true); y += GY;
+  shape('end', 'term', cx, y, TW, TH, ['おわり']); y += TH + pad;
+  document.getElementById('flowWrap').innerHTML =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${y}" width="${width}" height="${y}" role="img" aria-label="フローチャート">${P.join('')}</svg>`;
+}
+
+/* ---------- 画面の更新 ---------- */
+const $ = id => document.getElementById(id);
+
+function render() {
+  const st = T[idx], prev = idx ? T[idx - 1] : { env: {} };
+  const pendId = pending ? T[idx + 1].id : null;
+  document.querySelectorAll('.node').forEach(g => {
+    g.classList.toggle('cur', g.dataset.id === st.id);
+    g.classList.toggle('pend', g.dataset.id === pendId);
+  });
+  document.querySelectorAll('.blabel').forEach(t => t.classList.remove('taken'));
+  if (st.branch) { const lb = $(`lb-${st.id}-${st.branch}`); if (lb) lb.classList.add('taken'); }
+  document.querySelectorAll('.ln').forEach(l => {
+    l.classList.toggle('cur', +l.dataset.line === lineOf[st.id]);
+    l.classList.toggle('pend', pendId !== null && +l.dataset.line === lineOf[pendId]);
+  });
+
+  // 変数の表
+  const ch = idx ? diffEnv(prev.env, st.env) : [];
+  const names = Object.keys(st.env);
+  $('vars').innerHTML = names.length ? '<table>' + names.map(k => {
+    const v = st.env[k];
+    const cell = Array.isArray(v)
+      ? '<span class="cells">' + v.map((x, i) => `<span class="cell${ch.some(c => c.name === k && (c.i === i || c.i === undefined)) ? ' chg' : ''}"><i>${i}</i><b>${esc(x)}</b></span>`).join('') + '</span>'
+      : `<span class="val${ch.some(c => c.name === k) ? ' chg' : ''}">${esc(fmt(v))}</span>`;
+    return `<tr><th>${esc(k)}</th><td>${cell}</td></tr>`;
+  }).join('') + '</table>' : '<span class="empty">まだ変数はありません</span>';
+  $('out').innerHTML = st.out.length ? esc(st.out.join('\n')) : '<span class="empty">まだ何も表示されていません</span>';
+
+  // 説明と予想モードの問題
+  const q = pending ? T[idx + 1].q : null;
+  $('msg').innerHTML = (fb ? `<span class="${fb.ok ? 'ok' : 'ng'}">${fb.ok ? '○ 正解！' : '× ざんねん。'}</span> ` : '') + esc(pending ? '次の記号（青い点線）を実行するとどうなる？' : st.msg);
+  const quiz = $('quiz');
+  quiz.classList.toggle('on', !!q);
+  if (q) {
+    quiz.innerHTML = q.kind === 'yn'
+      ? `<span>${esc(q.text)}</span><button data-a="yes">Yes（成り立つ）</button><button data-a="no">No（成り立たない）</button><button data-a="skip">答えを見る</button>`
+      : `<span>この処理のあと、<b>${esc(q.label)}</b> の値は？</span><input type="text" id="qIn" inputmode="numeric" autocomplete="off"><button data-a="val">答える</button><button data-a="skip">答えを見る</button>`;
+    const qi = $('qIn'); if (qi) qi.focus();
+  } else quiz.innerHTML = '';
+
+  $('count').textContent = `ステップ ${idx} / ${T.length - 1}`;
+  $('slider').max = T.length - 1; $('slider').value = idx;
+  $('bPrev').disabled = $('bFirst').disabled = idx === 0 && !pending;
+  $('bNext').disabled = idx >= T.length - 1 || pending;
+  $('bPlay').disabled = predict || idx >= T.length - 1;
+  $('bPlay').textContent = playing ? '⏸ 止める' : '▶ 自動再生';
+  $('score').textContent = predict ? `正解 ${score.ok} / ${score.n} 問` : '';
+
+  // 今の記号が見える位置までスクロール
+  const g = document.querySelector('.node.pend') || document.querySelector('.node.cur'), wrap = $('flowWrap');
+  if (g) {
+    const r = g.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+    if (r.top < w.top + 30 || r.bottom > w.bottom - 30)
+      wrap.scrollTo({ top: wrap.scrollTop + (r.top + r.height / 2) - (w.top + w.height / 2), behavior: 'smooth' });
+    if (r.left < w.left || r.right > w.right) wrap.scrollLeft += (r.left + r.width / 2) - (w.left + w.width / 2);
+  }
+}
+
+function stop() { if (playing) { clearInterval(playing); playing = null; } }
+function go(i) { stop(); pending = false; fb = null; idx = Math.max(0, Math.min(T.length - 1, i)); render(); }
+function next() {
+  if (pending) return;
+  if (idx >= T.length - 1) { stop(); render(); return; }
+  fb = null;
+  if (predict && T[idx + 1].q && !answered.has(idx + 1)) { pending = true; render(); return; }
+  idx++;
+  if (idx >= T.length - 1) stop();
+  render();
+}
+function answer(kind) {
+  if (!pending) return;
+  const q = T[idx + 1].q; let ok = false;
+  if (kind === 'val') {
+    const raw = $('qIn').value.trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/^[−ー－]/, '-');
+    if (raw === '') { $('qIn').focus(); return; }
+    ok = typeof q.answer === 'number' ? Number(raw) === q.answer : raw.replace(/^["'「]|["'」]$/g, '') === String(q.answer);
+  } else if (kind !== 'skip') ok = (kind === 'yes') === q.answer;
+  answered.add(idx + 1); score.n++; if (ok) score.ok++;
+  fb = { ok }; pending = false; idx++; render();
+}
+function togglePlay() {
+  if (playing) { stop(); render(); return; }
+  if (predict || idx >= T.length - 1) return;
+  playing = setInterval(next, +$('speed').value); render();
+}
+
+/* ---------- 例題の読みこみ ---------- */
+function readInputs(ex) {
+  const v = {}; let err = '';
+  for (const d of ex.inputs) {
+    const el = $('in-' + d.name);
+    if (d.list) {
+      const parts = el.value.replace(/[、，\s]+/g, ',').split(',').filter(s => s !== '');
+      const nums = parts.map(Number);
+      if (nums.length < 2 || nums.length > 8 || nums.some(x => !Number.isInteger(x) || Math.abs(x) > 999)) { err = `${d.label} は整数を 2〜8 個、カンマで区切って入れてください`; v[d.name] = d.def.slice(); }
+      else v[d.name] = nums;
+    } else {
+      let x = Math.round(Number(el.value));
+      if (el.value === '' || !Number.isFinite(x)) x = d.def;
+      x = Math.max(d.min, Math.min(d.max, x));
+      v[d.name] = x;
+    }
+  }
+  $('inputErr').textContent = err;
+  return v;
+}
+function rebuild() {
+  const ex = EXAMPLES[+$('exSel').value];
+  stop();
+  inp = readInputs(ex);
+  prog = ex.body();
+  prepare(prog, { id: 0, loop: 0 });
+  T = buildTrace();
+  buildPython(); drawFlow();
+  idx = 0; pending = false; fb = null; answered = new Set(); score = { ok: 0, n: 0 };
+  $('flowWrap').scrollTop = 0;
+  render();
+}
+function loadExample() {
+  const ex = EXAMPLES[+$('exSel').value];
+  $('desc').textContent = ex.desc;
+  $('inputs').innerHTML = ex.inputs.map(d => d.list
+    ? `<label>${esc(d.label)} <input class="list" type="text" id="in-${d.name}" value="${d.def.join(', ')}"></label>`
+    : `<label>${esc(d.label)} <input type="number" id="in-${d.name}" value="${d.def}" min="${d.min}" max="${d.max}" step="${d.step || 1}"></label>`).join('');
+  rebuild();
+}
+
+/* ---------- 操作 ---------- */
+$('exSel').innerHTML = EXAMPLES.map((e, i) => `<option value="${i}">${esc(e.title)}</option>`).join('');
+$('exSel').addEventListener('change', loadExample);
+$('inputs').addEventListener('change', rebuild);
+$('bFirst').addEventListener('click', () => go(0));
+$('bPrev').addEventListener('click', () => go(pending ? idx : idx - 1));
+$('bNext').addEventListener('click', () => { stop(); next(); });
+$('bPlay').addEventListener('click', togglePlay);
+$('speed').addEventListener('change', () => { if (playing) { stop(); togglePlay(); } });
+$('slider').addEventListener('input', e => go(+e.target.value));
+$('predict').addEventListener('change', e => {
+  predict = e.target.checked; stop(); pending = false; fb = null; answered = new Set(); score = { ok: 0, n: 0 }; render();
+});
+$('quiz').addEventListener('click', e => { const a = e.target.dataset && e.target.dataset.a; if (a) answer(a); });
+$('quiz').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'qIn') answer('val'); });
+document.addEventListener('keydown', e => {
+  if (/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(e.target.tagName)) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); stop(); next(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); go(pending ? idx : idx - 1); }
+  else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+});
+// 図と Python の対応を、マウスを重ねて確かめる
+const hover = (ids, on) => {
+  ids.forEach(id => {
+    const g = document.querySelector(`.node[data-id="${id}"]`); if (g) g.classList.toggle('hover', on);
+    const l = document.querySelector(`.ln[data-line="${lineOf[id]}"]`); if (l) l.classList.toggle('hover', on);
+  });
+};
+for (const [box, sel] of [[$('flowWrap'), '.node'], [$('code'), '.ln']]) {
+  for (const [ev, on] of [['mouseover', true], ['mouseout', false]]) {
+    box.addEventListener(ev, e => {
+      const el = e.target.closest(sel); if (!el) return;
+      hover(el.dataset.id ? [el.dataset.id] : el.dataset.ids.split(' ').filter(Boolean), on);
+    });
+  }
+}
+loadExample();
+</script>
+</body>
+</html>

@@ -11,6 +11,14 @@
 - [授業ガイド（教員用）](classroom/README.md)
 - [生徒配布用ノートブック](classroom/lessons/)
 
+## フローチャート学習ツール
+
+[フローチャート・トレーサー](tools/flowchart/index.html)（[ブラウザで開く](https://ttsyk1227-art.github.io/joho/flowchart/)）
+
+フローチャートを 1 ステップずつ実行し、いま実行している記号・対応する Python の行・変数の値を同時に確かめられる教材です。
+順次・分岐・反復・リスト・線形探索・バブルソートの 8 つの例題が入っていて、入力値を変えて動きを比べられます。
+値や分岐を先に予想してから進める「予想モード」つき。`index.html` 1 ファイルだけで動くので、ダウンロードして開くこともできます。
+
 ## Python 作品ギャラリー（Colab でできることの紹介）
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ttsyk1227-art/joho/blob/main/showcase/python_showcase.ipynb)
