@@ -1,17 +1,19 @@
-# ブラウザ版どら焼きキャッチ（games/web）を GitHub Pages に公開するワークフロー
+# ブラウザで動くアプリ（どら焼きキャッチ・PDFヘッダー追加）を GitHub Pages に公開するワークフロー
 #
-# main ブランチの games/web が変わるたびに、pygbag でブラウザ用に変換して公開する。
+# main ブランチの games/web や tools/pdf_header が変わるたびに公開する。
 # 公開先: https://<ユーザー名>.github.io/<リポジトリ名>/dorayaki/
+#         https://<ユーザー名>.github.io/<リポジトリ名>/pdf-header/
 #
 # 最初に 1 回だけ、GitHub のリポジトリで次の設定が必要:
 #   Settings → Pages → Build and deployment → Source を「GitHub Actions」にする
-name: ブラウザ版ゲームを公開
+name: ブラウザ版アプリを公開
 
 on:
   push:
     branches: [main]
     paths:
       - "games/web/**"
+      - "tools/pdf_header/index.html"
       - ".github/workflows/deploy-game.yml"
   workflow_dispatch:   # Actions タブから手動でも実行できる
 
@@ -44,14 +46,17 @@ jobs:
         run: |
           mkdir -p _site/dorayaki
           cp -r games/web/build/web/. _site/dorayaki/
+          mkdir -p _site/pdf-header
+          cp tools/pdf_header/index.html _site/pdf-header/index.html
           cat > _site/index.html <<'HTML'
           <!doctype html>
           <html lang="ja">
           <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Python ゲーム</title></head>
+          <title>公開アプリ一覧</title></head>
           <body style="font-family: sans-serif; padding: 16px;">
-          <h1>Python ゲーム</h1>
-          <ul><li><a href="dorayaki/">どら焼きキャッチ</a></li></ul>
+          <h1>公開アプリ一覧</h1>
+          <ul><li><a href="dorayaki/">どら焼きキャッチ</a></li>
+          <li><a href="pdf-header/">下書きPDFにヘッダーを追加</a></li></ul>
           </body>
           </html>
           HTML
