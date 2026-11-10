@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>下書きPDFにヘッダーを追加</title>
+<style>
+  body { font-family: system-ui, "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 1.3rem; }
+  label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: .9rem; }
+  input[type=text], input[type=date], input[type=file] { width: 100%; box-sizing: border-box; padding: 8px; font-size: 1rem; }
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-weight: 400; }
+  button { margin-top: 20px; padding: 12px 20px; font-size: 1rem; cursor: pointer; }
+  #preview { width: 100%; border: 1px solid #ccc; margin-top: 12px; background: #fff; }
+  #msg { margin-top: 12px; min-height: 1.5em; }
+  .err { color: #c00; }
+  small { color: #666; }
+</style>
+</head>
+<body>
+<h1>下書きPDFにヘッダーを追加</h1>
+<p><small>1枚目の上部に「タイトル・氏名・提出日・押印欄」を追加します。PDFはこのブラウザの中だけで処理され、外部には送信されません。</small></p>
+
+<label for="file">下書きPDF</label>
+<input id="file" type="file" accept="application/pdf">
+
+<label for="title">タイトル</label>
+<input id="title" type="text" value="新規部活動記事">
+
+<label for="name">記載者の氏名</label>
+<input id="name" type="text" placeholder="例: 高橋　利之">
+
+<label for="date">提出日</label>
+<input id="date" type="date">
+
+<label for="stamps">押印欄（、で区切る）</label>
+<input id="stamps" type="text" value="校長、教頭、事務長、教務、篠原">
+
+<label class="check"><input id="shrink" type="checkbox" checked> 1枚目を縮小してヘッダーの下に収める</label>
+
+<label>ヘッダーのプレビュー</label>
+<canvas id="preview"></canvas>
+
+<button id="run">ヘッダーを追加してダウンロード</button>
+<div id="msg"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script>
+const HEADER_H = 105, MARGIN_X = 30, SCALE = 4;  // pt / pt / 画像の解像度倍率
+const FONT = '"Hiragino Sans","Yu Gothic",Meiryo,"Noto Sans CJK JP","Noto Sans JP",sans-serif';
+const $ = id => document.getElementById(id);
+
+$("date").value = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+function toReiwa(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (y >= 2019) return `令和${y === 2019 ? "元" : y - 2018}年${m}月${d}日`;
+  return `${y}年${m}月${d}日`;
+}
+
+// ヘッダー（幅 w pt × 高さ HEADER_H pt）を canvas に描く。座標は上端が0。
+function drawHeader(cv, w) {
+  cv.width = Math.round(w * SCALE); cv.height = HEADER_H * SCALE;
+  const c = cv.getContext("2d");
+  c.scale(SCALE, SCALE);
+  c.fillStyle = "#fff"; c.fillRect(0, 0, w, HEADER_H);
+  c.fillStyle = "#000"; c.strokeStyle = "#000"; c.lineWidth = 0.8;
+  const name = $("name").value.trim();
+  c.textAlign = "left";
+  c.font = `14px ${FONT}`; c.fillText($("title").value, MARGIN_X, 36);
+  c.font = `10.5px ${FONT}`;
+  c.fillText(name ? `記載者　${name}` : "記載者", MARGIN_X, 62);
+  c.fillText($("date").value ? toReiwa($("date").value) : "", MARGIN_X, 85);
+
+  const stamps = $("stamps").value.replace(/,/g, "、").split("、").map(s => s.trim()).filter(Boolean);
+  const n = Math.max(stamps.length, 1);
+  const bw = Math.min(60, (w * 0.5 - MARGIN_X) / n), right = w - MARGIN_X, left = right - bw * n;
+  const top = 21, hh = 14, bh = 62;
+  c.strokeRect(left, top, bw * n, hh + bh);
+  c.beginPath(); c.moveTo(left, top + hh); c.lineTo(right, top + hh);
+  for (let i = 1; i < n; i++) { c.moveTo(left + bw * i, top); c.lineTo(left + bw * i, top + hh + bh); }
+  c.stroke();
+  c.textAlign = "center";
+  stamps.forEach((s, i) => {
+    let size = 8.5;
+    for (; size > 5; size -= 0.5) { c.font = `${size}px ${FONT}`; if (c.measureText(s).width <= bw - 4) break; }
+    c.font = `${size}px ${FONT}`;
+    c.fillText(s, left + bw * (i + 0.5), top + hh - 4);
+  });
+  c.beginPath(); c.moveTo(MARGIN_X, HEADER_H - 6); c.lineTo(w - MARGIN_X, HEADER_H - 6); c.stroke();
+}
+
+function refreshPreview() { drawHeader($("preview"), 595); }
+["title", "name", "date", "stamps"].forEach(id => $(id).addEventListener("input", refreshPreview));
+refreshPreview();
+document.fonts && document.fonts.ready.then(refreshPreview);
+
+function say(text, err) { $("msg").textContent = text; $("msg").className = err ? "err" : ""; }
+
+$("run").addEventListener("click", async () => {
+  const f = $("file").files[0];
+  if (!f) return say("下書きPDFを選んでください。", true);
+  if (!window.PDFLib) return say("PDF処理ライブラリを読み込めませんでした。ネット接続を確認してください。", true);
+  try {
+    say("処理中…");
+    const { PDFDocument } = PDFLib;
+    const src = await PDFDocument.load(await f.arrayBuffer(), { ignoreEncryption: true });
+    const out = await PDFDocument.create();
+    const pages = src.getPages();
+    for (let i = 0; i < pages.length; i++) {
+      if (i > 0) { const [p] = await out.copyPages(src, [i]); out.addPage(p); continue; }
+      const { width: w, height: h } = pages[0].getSize();
+      const page = out.addPage([w, h]);
+      const emb = await out.embedPage(pages[0]);
+      if ($("shrink").checked) {
+        const s = (h - HEADER_H) / h;
+        page.drawPage(emb, { x: (w - w * s) / 2, y: 0, xScale: s, yScale: s });
+      } else {
+        page.drawPage(emb, { x: 0, y: 0 });
+      }
+      const cv = document.createElement("canvas");
+      drawHeader(cv, w);
+      const png = await out.embedPng(cv.toDataURL("image/png"));
+      page.drawImage(png, { x: 0, y: h - HEADER_H, width: w, height: HEADER_H });
+    }
+    out.setTitle($("title").value);
+    const bytes = await out.save();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+    a.download = f.name.replace(/\.pdf$/i, "") + "_提出用.pdf";
+    a.click();
+    say(`完了しました（${pages.length}ページ）。`);
+  } catch (e) {
+    say("変換に失敗しました: " + e.message, true);
+  }
+});
+</script>
+</body>
+</html>
