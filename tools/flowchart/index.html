@@ -31,6 +31,7 @@ h1 { font-size: 18px; margin: 0 0 6px; }
 .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
 .bar label { color: var(--sub); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
 select, input[type=number], input[type=text] {
+  max-width: 100%;
   font: inherit; color: var(--ink); background: var(--panel);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px;
 }
@@ -44,7 +45,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 .panel h2 { font-size: 13px; margin: 0; padding: 6px 12px; color: var(--sub); border-bottom: 1px solid var(--line); font-weight: 600; }
 #flowPanel { display: flex; flex-direction: column; min-height: 0; }
 #flowWrap { flex: 1; overflow: auto; padding: 10px; text-align: center; position: relative; }
-#flowWrap svg { max-width: 100%; height: auto; }
+#flowWrap svg { height: auto; }
 #side { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
 
 /* フローチャート */
@@ -105,20 +106,28 @@ button:disabled { opacity: .45; cursor: default; }
 
 @media (max-width: 860px) {
   html, body { height: auto; }
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: minmax(0, 1fr); }
   #flowWrap { max-height: 58vh; }
-  #flowWrap svg { max-width: none; }
   #side { overflow: visible; }
   footer { position: sticky; bottom: 0; }
   .hint { display: none; }
 }
+.node.rail .shape, .node.rail.cur .shape, .node.rail.pend .shape { fill: none; }
+.node.rail .shape { stroke-width: 1.5; }
+.node.rail.cur .shape { stroke-width: 4; }
+.notice { margin: 0; padding: 14px 16px; font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif; font-size: 14px; color: var(--sub); white-space: normal; }
+.kind { display: inline-block; font-size: 12px; font-weight: 700; padding: 0 8px; border-radius: 10px; color: #fff; background: #2f6fed; margin-right: 4px; }
+.kind.k-task { background: #d9730d; } .kind.k-sup { background: #6b7280; }
+.frame { font-size: 12px; color: var(--sub); margin: 4px 0 2px; font-weight: 600; }
+.frame.dim, table.dim { opacity: .55; }
 </style>
 </head>
 <body>
 <header>
   <h1>フローチャート・トレーサー <span style="font-size:13px;font-weight:400;color:var(--sub)">― 1ステップずつ動かして、Python と見くらべよう</span></h1>
   <div class="bar">
-    <label>例題 <select id="exSel"></select></label>
+    <label>回 <select id="lesSel"></select></label>
+    <label>プログラム <select id="exSel"></select></label>
     <span id="inputs" class="bar"></span>
     <span id="inputErr"></span>
   </div>
@@ -131,7 +140,7 @@ button:disabled { opacity: .45; cursor: default; }
     <div id="flowWrap"></div>
   </section>
   <div id="side">
-    <section class="panel"><h2>Python プログラム</h2><div id="code"></div></section>
+    <section class="panel"><h2 id="codeTitle">Python プログラム</h2><div id="code"></div></section>
     <section class="panel"><h2>変数の値</h2><div id="vars"></div></section>
     <section class="panel"><h2>表示（出力）</h2><pre id="out"></pre></section>
   </div>
@@ -157,147 +166,527 @@ button:disabled { opacity: .45; cursor: default; }
 <script>
 'use strict';
 /* =====================================================================
-   例題の書き方
-   A(図の文, Pythonの行, 実行内容)            … 処理（長方形）
-   IN(変数名, 図の文, Pythonの行)             … 入力（平行四辺形）
-   OUT(図の文, Pythonの行, 表示する文字列)     … 表示（平行四辺形）
-   IF(図の条件, Pythonの条件, 判定, Yesの処理, Noの処理)   … 判断（ひし形）
-   WHILE(図の条件, Pythonの条件, 判定, 繰り返す処理)       … ループ端
-   FOR(変数名, 図の文, Pythonの行, 初めの値, 終わりの値, 繰り返す処理)
-   図の文・Pythonの行は、入力値 inp を受け取る関数にもできる。
+   プログラムの書き方（図の文・Python の行は、入力値 inp を受け取る関数にもできる）
+   A(図の文, Pythonの行, 実行内容)                     … 処理（長方形）
+   IN(変数名, 図の文, Pythonの行)                      … 入力（平行四辺形）
+   OUT(図の文, Pythonの行, 表示する文字列)              … 表示（平行四辺形）
+   IF(図の条件, Pythonの条件, 判定, Yesの処理, Noの処理)  … 判断（ひし形）
+   WHILE(図の条件, Pythonの条件, 判定, 繰り返す処理)      … ループ端
+   LOOP(繰り返す処理) と BREAK()                        … while True と break
+   FOR(変数名, 図の文, Pythonの行, 値の並び, 繰り返す処理)
+   CALL(図の文, Pythonの行, 関数名, 引数, 戻ったあとの処理) … 関数の呼び出し（定義済み処理）
+   RET(図の文, Pythonの行, 返す値)                      … return
    ===================================================================== */
 const A = (fc, py, run) => ({ t: 'assign', fc, py, run });
-const IN = (name, fc, py) => ({ t: 'input', name, fc, py });
+const IN = (name, fc, py, get) => ({ t: 'input', name, fc, py, get });
 const OUT = (fc, py, val) => ({ t: 'output', fc, py, val });
 const IF = (fc, py, cond, then, els = [], elif = false) => ({ t: 'if', fc, py, cond, then, els, elif });
 const WHILE = (fc, py, cond, body) => ({ t: 'while', fc, py, cond, body });
-const FOR = (v, fc, py, from, to, body) => ({ t: 'for', v, fc, py, from, to, body });
+const LOOP = body => ({ t: 'while', fc: 'ずっと繰り返す', py: 'True', cond: () => true, body, forever: true });
+const BREAK = () => ({ t: 'break', fc: '', py: 'break' });
+const FOR = (v, fc, py, vals, body) => ({ t: 'for', v, fc, py, vals, body });
+const CALL = (fc, py, fn, args, done) => ({ t: 'call', fc, py, fn, args, done });
+const RET = (fc, py, val, float = false) => ({ t: 'ret', fc, py, val, float });
 
-const EXAMPLES = [
-  {
-    title: '① 順次：長方形の面積と周の長さ',
-    desc: '上から順番に1つずつ実行する「順次構造」。変数に値が入っていくようすを確かめよう。',
-    inputs: [{ name: 'width', label: 'よこ', def: 8, min: 1, max: 100 }, { name: 'height', label: 'たて', def: 5, min: 1, max: 100 }],
-    body: () => [
-      IN('width', 'width を入力', 'width = int(input("よこ: "))'),
-      IN('height', 'height を入力', 'height = int(input("たて: "))'),
-      A('area ← width × height', 'area = width * height', e => { e.area = e.width * e.height; }),
-      A('around ←\n(width + height) × 2', 'around = (width + height) * 2', e => { e.around = (e.width + e.height) * 2; }),
-      OUT('area を表示', 'print("面積:", area)', e => `面積: ${e.area}`),
-      OUT('around を表示', 'print("周の長さ:", around)', e => `周の長さ: ${e.around}`),
-    ],
-  },
-  {
-    title: '② 分岐：偶数か奇数か',
-    desc: '条件によって進む道が分かれる「分岐構造」。n を変えて、Yes と No の両方を通ってみよう。',
-    inputs: [{ name: 'n', label: 'n', def: 7, min: 0, max: 999 }],
-    body: () => [
-      IN('n', 'n を入力', 'n = int(input("整数: "))'),
-      A('r ← n ÷ 2 の余り', 'r = n % 2', e => { e.r = e.n % 2; }),
-      IF('r = 0', 'r == 0', e => e.r === 0,
-        [OUT('「偶数」と表示', 'print("偶数")', () => '偶数')],
-        [OUT('「奇数」と表示', 'print("奇数")', () => '奇数')]),
-    ],
-  },
-  {
-    title: '③ 分岐：点数から評価（A・B・C）',
-    desc: '分岐を重ねて3つに分ける。Python では elif を使う（第4回の例題）。',
-    inputs: [{ name: 'score', label: '点数', def: 72, min: 0, max: 100 }],
-    body: () => [
-      IN('score', 'score を入力', 'score = int(input("点数: "))'),
-      IF('score ≧ 80', 'score >= 80', e => e.score >= 80,
-        [OUT('「A」と表示', 'print("A")', () => 'A')],
-        [IF('score ≧ 60', 'score >= 60', e => e.score >= 60,
-          [OUT('「B」と表示', 'print("B")', () => 'B')],
-          [OUT('「C」と表示', 'print("C")', () => 'C')], true)]),
-    ],
-  },
-  {
-    title: '④ 反復（for）：3の倍数の合計',
-    desc: '決まった回数だけ繰り返す「反復構造」。繰り返しの中に分岐が入っている（第5回の例題）。',
-    inputs: [{ name: 'n', label: 'いくつまで', def: 10, min: 1, max: 30 }],
-    body: () => [
-      IN('n', 'n を入力', 'n = int(input("いくつまで: "))'),
-      A('total ← 0', 'total = 0', e => { e.total = 0; }),
-      FOR('i', 'i を 1 から n まで\n1 ずつ増やしながら', 'for i in range(1, n + 1):', () => 1, e => e.n, [
-        IF('i ÷ 3 の余り = 0', 'i % 3 == 0', e => e.i % 3 === 0,
-          [A('total ← total + i', 'total += i', e => { e.total += e.i; })]),
-      ]),
-      OUT('total を表示', 'print("3の倍数の合計:", total)', e => `3の倍数の合計: ${e.total}`),
-    ],
-  },
-  {
-    title: '⑤ 反復（while）：貯金が目標額になる日',
-    desc: '条件が成り立つ間だけ繰り返す。何回繰り返すかは、やってみるまで分からない（第6回の例題）。',
-    inputs: [{ name: 'goal', label: '目標額', def: 2000, min: 500, max: 10000, step: 500 }],
-    body: () => [
-      IN('goal', 'goal を入力', 'goal = int(input("目標額: "))'),
-      A('money ← 0', 'money = 0', e => { e.money = 0; }),
-      A('day ← 0', 'day = 0', e => { e.day = 0; }),
-      WHILE('money ＜ goal の間', 'money < goal', e => e.money < e.goal, [
-        A('day ← day + 1', 'day += 1', e => { e.day += 1; }),
-        A('money ← money + 500', 'money += 500', e => { e.money += 500; }),
-      ]),
-      OUT('day と money を表示', 'print(f"{day}日目に{money}円になります。")', e => `${e.day}日目に${e.money}円になります。`),
-    ],
-  },
-  {
-    title: '⑥ リスト：最大値を求める',
-    desc: 'リスト（配列）を先頭から順に調べ、「今までの最大」を更新していく（第7回の応用課題）。',
-    inputs: [{ name: 'scores', label: 'scores', list: true, def: [72, 85, 90, 64, 78] }],
-    body: () => [
-      A(inp => `scores ←\n[${inp.scores.join(', ')}]`, inp => `scores = [${inp.scores.join(', ')}]`, (e, inp) => { e.scores = inp.scores.slice(); }),
-      A('n ← scores の要素数', 'n = len(scores)', e => { e.n = e.scores.length; }),
-      A('biggest ← scores[0]', 'biggest = scores[0]', e => { e.biggest = e.scores[0]; }),
-      FOR('i', 'i を 1 から n−1 まで\n1 ずつ増やしながら', 'for i in range(1, n):', () => 1, e => e.n - 1, [
-        IF('scores[i] ＞ biggest', 'scores[i] > biggest', e => e.scores[e.i] > e.biggest,
-          [A('biggest ← scores[i]', 'biggest = scores[i]', e => { e.biggest = e.scores[e.i]; })]),
-      ]),
-      OUT('biggest を表示', 'print("最大値:", biggest)', e => `最大値: ${e.biggest}`),
-    ],
-  },
-  {
-    title: '⑦ 探索：線形探索',
-    desc: 'リストの先頭から1つずつ調べて、探している値（target）の場所を見つける。',
-    inputs: [{ name: 'data', label: 'data', list: true, def: [14, 3, 27, 8, 19] }, { name: 'target', label: '探す値', def: 27, min: -999, max: 999 }],
-    body: () => [
-      A(inp => `data ←\n[${inp.data.join(', ')}]`, inp => `data = [${inp.data.join(', ')}]`, (e, inp) => { e.data = inp.data.slice(); }),
-      IN('target', 'target を入力', 'target = int(input("探す値: "))'),
-      A('n ← data の要素数', 'n = len(data)', e => { e.n = e.data.length; }),
-      A('found ← −1', 'found = -1', e => { e.found = -1; }),
-      FOR('i', 'i を 0 から n−1 まで\n1 ずつ増やしながら', 'for i in range(0, n):', () => 0, e => e.n - 1, [
-        IF('data[i] = target', 'data[i] == target', e => e.data[e.i] === e.target,
-          [A('found ← i', 'found = i', e => { e.found = e.i; })]),
-      ]),
-      IF('found ≧ 0', 'found >= 0', e => e.found >= 0,
-        [OUT('found を表示', 'print(f"data[{found}] にあります")', e => `data[${e.found}] にあります`)],
-        [OUT('「見つかりません」\nと表示', 'print("見つかりません")', () => '見つかりません')]),
-    ],
-  },
-  {
-    title: '⑧ 整列：バブルソート（発展）',
-    desc: 'となり同士をくらべて、順番が逆なら入れかえる。二重の繰り返しの動きを追ってみよう。',
-    inputs: [{ name: 'data', label: 'data', list: true, def: [5, 2, 8, 3] }],
-    body: () => [
-      A(inp => `data ←\n[${inp.data.join(', ')}]`, inp => `data = [${inp.data.join(', ')}]`, (e, inp) => { e.data = inp.data.slice(); }),
-      A('n ← data の要素数', 'n = len(data)', e => { e.n = e.data.length; }),
-      FOR('i', 'i を 0 から n−2 まで\n1 ずつ増やしながら', 'for i in range(0, n - 1):', () => 0, e => e.n - 2, [
-        FOR('j', 'j を 0 から n−2−i まで\n1 ずつ増やしながら', 'for j in range(0, n - 1 - i):', () => 0, e => e.n - 2 - e.i, [
-          IF('data[j] ＞ data[j+1]', 'data[j] > data[j + 1]', e => e.data[e.j] > e.data[e.j + 1], [
-            A('tmp ← data[j]', 'tmp = data[j]', e => { e.tmp = e.data[e.j]; }),
-            A('data[j] ← data[j+1]', 'data[j] = data[j + 1]', e => { e.data[e.j] = e.data[e.j + 1]; }),
-            A('data[j+1] ← tmp', 'data[j + 1] = tmp', e => { e.data[e.j + 1] = e.tmp; }),
+// 小道具
+const R = (a, b, s = 1) => { const r = []; for (let k = a; k <= b; k += s) r.push(k); return r; };   // a から b まで
+const pf = x => (Number.isInteger(x) ? x.toFixed(1) : String(x));                                    // Python の小数の表示
+const lit = (a, f) => '[' + a.map(x => (typeof x === 'string' ? '"' + x + '"' : f ? pf(x) : x)).join(', ') + ']';
+const round1 = x => {                                                                                // Python の round(x, 1)
+  if ((x * 20) % 1 === 0 && Math.abs((x * 10) % 1) === 0.5) { const lo = Math.floor(x * 10); return (lo % 2 === 0 ? lo : lo + 1) / 10; }
+  return Number(x.toFixed(1));
+};
+const nx = (io, key, arr, def) => { const i = io.k[key] || 0; io.k[key] = i + 1; return i < arr.length ? arr[i] : def; };
+// リストを用意する処理（長いときは図の文を短くする）
+const LISTA = (name, key, f) => A(
+  inp => { const s = lit(inp[key], f); return s.length <= 22 ? `${name} ←\n${s}` : `${name} ← ${inp[key].length} 個の\n値のリスト`; },
+  inp => `${name} = ${lit(inp[key], f)}`, (e, inp) => { e[name] = inp[key].slice(); });
+const sumOf = a => a.reduce((x, y) => x + y, 0);
+
+const EX = '例題', K1 = '課題（基本）', K2 = '課題（発展）', SUP = '補充';
+
+const LESSONS = [
+  { title: '第1回 Colabと出力', progs: [
+    { kind: EX, title: '自己紹介を表示する', desc: '上から順番に1つずつ実行する「順次構造」。「"」で囲むと、計算ではなく文字として表示される。',
+      head: ['# 自己紹介を表示する'],
+      body: () => [
+        OUT('「はじめまして」と表示', 'print("はじめまして")', () => 'はじめまして'),
+        OUT('「好きな食べ物は\nカレーです」と表示', 'print("好きな食べ物はカレーです")', () => '好きな食べ物はカレーです'),
+        OUT('3 + 4 の計算結果を表示', 'print(3 + 4)', () => '7'),
+        OUT('文字「3 + 4」を表示', 'print("3 + 4")   # 「"」で囲むと文字として表示される', () => '3 + 4'),
+      ] },
+    { kind: K1, title: '名前・部活動・趣味を3行で表示', desc: '表示する内容は自由。図のとおり、表示の記号を3つ順番に並べればよい。',
+      body: () => [
+        OUT('名前を表示', 'print("名前: 山田 花子")', () => '名前: 山田 花子'),
+        OUT('部活動を表示', 'print("部活動: 吹奏楽部")', () => '部活動: 吹奏楽部'),
+        OUT('趣味を表示', 'print("趣味: 読書")', () => '趣味: 読書'),
+      ] },
+    { kind: K2, title: '記号で絵を描く', desc: '1行ずつ表示を並べると、上から順に絵ができていく（作例：木）。',
+      body: () => [
+        ...[1, 3, 5, 7, 9].map((n, i) => { const s = ' '.repeat(4 - i) + '*'.repeat(n); return OUT(`* を ${n} 個表示`, `print("${s}")`, () => s); }),
+        OUT('# を表示（幹）', 'print("    #")', () => '    #'),
+        OUT('# を表示（幹）', 'print("    #")', () => '    #'),
+      ] },
+  ] },
+  { title: '第2回 変数と計算', progs: [
+    { kind: EX, title: '買い物の合計金額', desc: '変数に値を入れ、その変数を使って計算する。値段や個数を変えて、変数の変化を確かめよう。',
+      inputs: [{ name: 'price', label: '値段', def: 150, min: 1, max: 9999 }, { name: 'count', label: '個数', def: 4, min: 1, max: 99 }],
+      floats: ['tax'], head: ['# 買い物の合計金額'],
+      body: () => [
+        A(inp => `price ← ${inp.price}`, inp => `price = ${inp.price}      # 1個の値段（円）`, (e, inp) => { e.price = inp.price; }),
+        A(inp => `count ← ${inp.count}`, inp => `count = ${inp.count}        # 個数`, (e, inp) => { e.count = inp.count; }),
+        A('total ← price × count', 'total = price * count', e => { e.total = e.price * e.count; }),
+        A('tax ← total × 0.1', 'tax = total * 0.1', e => { e.tax = e.total * 0.1; }),
+        OUT('合計と税込の金額を表示', 'print(f"合計 {total} 円、税込 {total + tax} 円")', e => `合計 ${e.total} 円、税込 ${pf(e.total + e.tax)} 円`),
+      ] },
+    { kind: K1, title: '長方形の面積と周の長さ', desc: '縦と横を変数に入れ、面積と周の長さを求めて表示する。',
+      inputs: [{ name: 'tate', label: '縦', def: 5, min: 1, max: 999 }, { name: 'yoko', label: '横', def: 8, min: 1, max: 999 }],
+      body: () => [
+        A(inp => `tate ← ${inp.tate}`, inp => `tate = ${inp.tate}`, (e, inp) => { e.tate = inp.tate; }),
+        A(inp => `yoko ← ${inp.yoko}`, inp => `yoko = ${inp.yoko}`, (e, inp) => { e.yoko = inp.yoko; }),
+        A('menseki ← tate × yoko', 'menseki = tate * yoko', e => { e.menseki = e.tate * e.yoko; }),
+        A('shu ← (tate + yoko) × 2', 'shu = (tate + yoko) * 2', e => { e.shu = (e.tate + e.yoko) * 2; }),
+        OUT('menseki と shu を表示', 'print(f"面積 {menseki}、周の長さ {shu}")', e => `面積 ${e.menseki}、周の長さ ${e.shu}`),
+      ] },
+    { kind: K2, title: '秒数を「○時間○分○秒」で表示', desc: '商（÷ の整数部分）と余りを使って、大きい単位から順に取り出す。',
+      inputs: [{ name: 'byou', label: '秒数', def: 3725, min: 0, max: 359999 }],
+      body: () => [
+        A(inp => `byou ← ${inp.byou}`, inp => `byou = ${inp.byou}`, (e, inp) => { e.byou = inp.byou; }),
+        A('jikan ←\nbyou ÷ 3600 の商', 'jikan = byou // 3600', e => { e.jikan = Math.floor(e.byou / 3600); }),
+        A('nokori ←\nbyou ÷ 3600 の余り', 'nokori = byou % 3600', e => { e.nokori = e.byou % 3600; }),
+        A('fun ← nokori ÷ 60 の商', 'fun = nokori // 60', e => { e.fun = Math.floor(e.nokori / 60); }),
+        A('amari ←\nnokori ÷ 60 の余り', 'amari = nokori % 60', e => { e.amari = e.nokori % 60; }),
+        OUT('jikan・fun・amari を表示', 'print(f"{jikan}時間{fun}分{amari}秒")', e => `${e.jikan}時間${e.fun}分${e.amari}秒`),
+      ] },
+  ] },
+  { title: '第3回 入力と型', progs: [
+    { kind: EX, title: '生まれた年から年齢を計算', desc: 'キーボードからの入力は文字列。計算に使うときは int() で整数に変える。',
+      inputs: [{ name: 'name', label: '名前', type: 'text', def: 'たろう' }, { name: 'born', label: '生まれた年', def: 2010, min: 1900, max: 2026 }],
+      head: ['# 生まれた年から年齢を計算'],
+      body: () => [
+        IN('name', 'name を入力', 'name = input("名前: ")'),
+        IN('born', 'born を入力\n（整数に変換）', 'born = int(input("生まれた年（西暦）: "))'),
+        A('age ← 2026 − born', 'age = 2026 - born', e => { e.age = 2026 - e.born; }),
+        OUT('name と age を表示', 'print(f"{name}さんは今年 {age} 歳になります")', e => `${e.name}さんは今年 ${e.age} 歳になります`),
+        OUT('文字 "3" と "4" を\nつないで表示', 'print("3" + "4")        # → 34（文字の連結）', () => '34'),
+        OUT('整数 3 と 4 を\n足して表示', 'print(int("3") + int("4"))  # → 7', () => '7'),
+      ] },
+    { kind: K1, title: 'BMI を求める', desc: '身長と体重は小数なので、int ではなく float で変換する。BMI ＝ 体重 ÷ 身長²。',
+      inputs: [{ name: 'shincho', label: '身長（m）', type: 'float', def: 1.6, min: 0.5, max: 2.5 }, { name: 'taiju', label: '体重（kg）', type: 'float', def: 50, min: 10, max: 200 }],
+      floats: ['shincho', 'taiju', 'bmi'],
+      body: () => [
+        IN('shincho', 'shincho を入力\n（小数に変換）', 'shincho = float(input("身長（m）: "))'),
+        IN('taiju', 'taiju を入力\n（小数に変換）', 'taiju = float(input("体重（kg）: "))'),
+        A('bmi ← taiju ÷ shincho²', 'bmi = taiju / shincho ** 2', e => { e.bmi = e.taiju / e.shincho ** 2; }),
+        OUT('bmi を小数第1位まで\n表示', 'print("BMI:", round(bmi, 1))', e => `BMI: ${pf(round1(e.bmi))}`),
+      ] },
+    { kind: K2, title: '3教科の合計と平均', desc: '3つの点数を入力して合計と平均を求める。平均は round で小数第1位までにする。',
+      inputs: [{ name: 'a', label: '国語', def: 70, min: 0, max: 100 }, { name: 'b', label: '数学', def: 85, min: 0, max: 100 }, { name: 'c', label: '英語', def: 62, min: 0, max: 100 }],
+      body: () => [
+        IN('a', 'a を入力（国語）', 'a = int(input("国語: "))'),
+        IN('b', 'b を入力（数学）', 'b = int(input("数学: "))'),
+        IN('c', 'c を入力（英語）', 'c = int(input("英語: "))'),
+        A('total ← a + b + c', 'total = a + b + c', e => { e.total = e.a + e.b + e.c; }),
+        OUT('total を表示', 'print("合計:", total)', e => `合計: ${e.total}`),
+        OUT('total ÷ 3 を\n小数第1位まで表示', 'print("平均:", round(total / 3, 1))', e => `平均: ${pf(round1(e.total / 3))}`),
+      ] },
+  ] },
+  { title: '第4回 条件分岐 if', progs: [
+    { kind: EX, title: '点数から評定を決める', desc: '条件によって進む道が分かれる「分岐構造」。点数を変えて、A・B・C の3つの道を通ってみよう。',
+      inputs: [{ name: 'score', label: '点数', def: 72, min: 0, max: 100 }], head: ['# 点数から評定を決める'],
+      body: () => [
+        IN('score', 'score を入力', 'score = int(input("点数: "))'),
+        IF('score ≧ 80', 'score >= 80', e => e.score >= 80,
+          [OUT('「評定 A」と表示', 'print("評定 A")', () => '評定 A')],
+          [IF('score ≧ 60', 'score >= 60', e => e.score >= 60,
+            [OUT('「評定 B」と表示', 'print("評定 B")', () => '評定 B')],
+            [OUT('「評定 C」と表示', 'print("評定 C")', () => '評定 C')], true)]),
+      ] },
+    { kind: K1, title: '偶数か奇数か', desc: '2で割った余りが 0 かどうかで分ける。n を変えて、Yes と No の両方を通ってみよう。',
+      inputs: [{ name: 'n', label: '整数', def: 7, min: -999, max: 999 }],
+      body: () => [
+        IN('n', 'n を入力', 'n = int(input("整数: "))'),
+        IF('n ÷ 2 の余り = 0', 'n % 2 == 0', e => ((e.n % 2) + 2) % 2 === 0,
+          [OUT('「偶数」と表示', 'print("偶数")', () => '偶数')],
+          [OUT('「奇数」と表示', 'print("奇数")', () => '奇数')]),
+      ] },
+    { kind: K2, title: '年齢から映画の料金', desc: '年齢の区切りで3つに分ける。12・13・64・65 の境目を入れて確かめよう。',
+      inputs: [{ name: 'age', label: '年齢', def: 13, min: 0, max: 120 }],
+      body: () => [
+        IN('age', 'age を入力', 'age = int(input("年齢: "))'),
+        IF('age ≦ 12', 'age <= 12', e => e.age <= 12,
+          [OUT('「1000円」と表示', 'print("1000円")', () => '1000円')],
+          [IF('age ≦ 64', 'age <= 64', e => e.age <= 64,
+            [OUT('「1800円」と表示', 'print("1800円")', () => '1800円')],
+            [OUT('「1200円」と表示', 'print("1200円")', () => '1200円')], true)]),
+      ] },
+  ] },
+  { title: '第5回 繰り返し for', progs: [
+    { kind: EX, title: '1 から n までの合計', desc: '決まった回数だけ繰り返す「反復構造」。合計用の変数を 0 にしておき、繰り返しの中で足していく。',
+      inputs: [{ name: 'n', label: 'n', def: 5, min: 1, max: 30 }], head: ['# 1からnまでの合計'],
+      body: () => [
+        IN('n', 'n を入力', 'n = int(input("n = "))'),
+        A('total ← 0', 'total = 0', e => { e.total = 0; }),
+        FOR('i', 'i を 1 から n まで\n1 ずつ増やしながら', 'for i in range(1, n + 1):', e => R(1, e.n), [
+          A('total ← total + i', 'total = total + i', e => { e.total += e.i; }),
+          OUT('i と total を表示', 'print(f"{i} まで足すと {total}")', e => `${e.i} まで足すと ${e.total}`),
+        ]),
+        OUT('total を表示', 'print("答え:", total)', e => `答え: ${e.total}`),
+      ] },
+    { kind: K1, title: '入力した段の九九', desc: 'i を 1 から 9 まで変えながら、n × i を表示する。',
+      inputs: [{ name: 'n', label: '何の段', def: 3, min: 1, max: 9 }],
+      body: () => [
+        IN('n', 'n を入力', 'n = int(input("何の段？: "))'),
+        FOR('i', 'i を 1 から 9 まで\n1 ずつ増やしながら', 'for i in range(1, 10):', () => R(1, 9), [
+          OUT('n × i の式と答えを表示', 'print(f"{n} × {i} = {n * i}")', e => `${e.n} × ${e.i} = ${e.n * e.i}`),
+        ]),
+      ] },
+    { kind: K2, title: 'FizzBuzz（1〜30）', desc: '繰り返しの中に分岐を重ねる。「3でも5でも割り切れる」を最初に調べるのがポイント。',
+      body: () => [
+        FOR('i', 'i を 1 から 30 まで\n1 ずつ増やしながら', 'for i in range(1, 31):', () => R(1, 30), [
+          IF('i が 3 の倍数\nかつ 5 の倍数', 'i % 3 == 0 and i % 5 == 0', e => e.i % 15 === 0,
+            [OUT('「FizzBuzz」と表示', 'print("FizzBuzz")', () => 'FizzBuzz')],
+            [IF('i が 3 の倍数', 'i % 3 == 0', e => e.i % 3 === 0,
+              [OUT('「Fizz」と表示', 'print("Fizz")', () => 'Fizz')],
+              [IF('i が 5 の倍数', 'i % 5 == 0', e => e.i % 5 === 0,
+                [OUT('「Buzz」と表示', 'print("Buzz")', () => 'Buzz')],
+                [OUT('i を表示', 'print(i)', e => String(e.i))], true)], true)]),
+        ]),
+      ] },
+  ] },
+  { title: '第6回 リストとwhile', progs: [
+    { kind: EX, title: '0 が入力されるまで点数を集める', desc: '回数が決まっていない繰り返し。0 が入力されたら break で繰り返しを抜ける（入力する点数のあとに、自動で 0 が入力されます）。',
+      inputs: [{ name: 'tens', label: '入力する点数', type: 'list', def: [80, 65, 92], minLen: 1, maxLen: 6, check: v => (v[0] === 0 ? '最初の点数は 0 以外にしてください' : '') }],
+      head: ['# 0が入力されるまで点数を集め、集計する'],
+      body: () => [
+        A('scores ← 空のリスト', 'scores = []', e => { e.scores = []; }),
+        LOOP([
+          IN('s', 's を入力', 's = int(input("点数（0で終了）: "))', (inp, io) => nx(io, 's', inp.tens, 0)),
+          IF('s = 0', 's == 0', e => e.s === 0, [BREAK()]),
+          A('scores の最後に\ns を追加', 'scores.append(s)', e => { e.scores.push(e.s); }),
+        ]),
+        OUT('人数（要素数）を表示', 'print("人数:", len(scores))', e => `人数: ${e.scores.length}`),
+        OUT('平均を小数第1位まで\n表示', 'print("平均:", round(sum(scores) / len(scores), 1))', e => `平均: ${pf(round1(sumOf(e.scores) / e.scores.length))}`),
+        OUT('最高と最低を表示', 'print("最高:", max(scores), " 最低:", min(scores))', e => `最高: ${Math.max(...e.scores)}  最低: ${Math.min(...e.scores)}`),
+      ] },
+    { kind: K1, title: '好きな食べ物を番号付きで表示', desc: 'リストの添字は 0 から始まるので、番号は i + 1 で表示する。',
+      inputs: [{ name: 'foods', label: 'foods', type: 'slist', def: ['カレー', '寿司', 'ラーメン', 'うどん', 'オムライス'], minLen: 5, maxLen: 5 }],
+      body: () => [
+        A('foods ← 食べ物 5 つの\nリスト', inp => `foods = ${lit(inp.foods)}`, (e, inp) => { e.foods = inp.foods.slice(); }),
+        FOR('i', 'i を 0 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(len(foods)):', e => R(0, e.foods.length - 1), [
+          OUT('i + 1 と foods[i] を表示', 'print(f"{i + 1}. {foods[i]}")', e => `${e.i + 1}. ${e.foods[e.i]}`),
+        ]),
+      ] },
+    { kind: K2, title: '数当てゲーム', desc: '当たるまで繰り返す。乱数で決まる答えと、入力する数をここで決めて動きを追える（入力が尽きたら、最後は答えが入力されます）。',
+      inputs: [{ name: 'answer', label: '乱数で決まる答え', def: 42, min: 1, max: 100 }, { name: 'guesses', label: '入力する数', type: 'list', def: [50, 25, 42], minLen: 1, maxLen: 8 }],
+      head: ['import random', ''],
+      body: () => [
+        A('answer ←\n1〜100 の乱数', 'answer = random.randint(1, 100)', (e, inp, io) => { e.answer = inp.answer; io.rand.push(e.answer); }),
+        A('count ← 0', 'count = 0', e => { e.count = 0; }),
+        LOOP([
+          IN('guess', 'guess を入力', 'guess = int(input("1〜100の数は？: "))', (inp, io) => nx(io, 'g', inp.guesses, inp.answer)),
+          A('count ← count + 1', 'count = count + 1', e => { e.count += 1; }),
+          IF('guess ＜ answer', 'guess < answer', e => e.guess < e.answer,
+            [OUT('「もっと大きい」\nと表示', 'print("もっと大きい")', () => 'もっと大きい')],
+            [IF('guess ＞ answer', 'guess > answer', e => e.guess > e.answer,
+              [OUT('「もっと小さい」\nと表示', 'print("もっと小さい")', () => 'もっと小さい')],
+              [OUT('「正解！」と count を\n表示', 'print(f"正解！ {count} 回で当たりました")', e => `正解！ ${e.count} 回で当たりました`), BREAK()], true)]),
+        ]),
+      ] },
+  ] },
+  { title: '第7回 関数', progs: [
+    { kind: EX, title: '点数から評定を返す関数', desc: '処理に名前を付けてまとめたものが関数。呼び出すと関数の図へ移り、return で元の場所へ戻る。',
+      inputs: [{ name: 'list', label: '点数のリスト', type: 'list', def: [95, 72, 40], minLen: 1, maxLen: 5 }],
+      head: ['# 点数から評定を返す関数（第4回の例題を関数にしたもの）'],
+      funcs: () => [{ name: 'grade', params: ['score'], py: 'def grade(score):', body: [
+        IF('score ≧ 80', 'score >= 80', e => e.score >= 80,
+          [RET('"A" を返す', 'return "A"', () => 'A')],
+          [IF('score ≧ 60', 'score >= 60', e => e.score >= 60,
+            [RET('"B" を返す', 'return "B"', () => 'B')],
+            [RET('"C" を返す', 'return "C"', () => 'C')], true)]),
+      ] }],
+      body: () => [
+        FOR('s', 'リストの値を順に\ns に入れながら', inp => `for s in ${lit(inp.list)}:`, (e, inp) => inp.list.slice(), [
+          CALL('s と grade(s) の結果\nを表示', 'print(s, "点 →", grade(s))', 'grade', e => [e.s], (e, r) => `${e.s} 点 → ${r}`),
+        ]),
+      ] },
+    { kind: K1, title: '摂氏を華氏に変換する関数', desc: '関数 c_to_f を作り、0℃ から 100℃ まで 10℃ きざみで変換して表示する。',
+      funcs: () => [{ name: 'c_to_f', params: ['c'], py: 'def c_to_f(c):', body: [
+        RET('c × 1.8 + 32 を返す', 'return c * 1.8 + 32', e => e.c * 1.8 + 32, true),
+      ] }],
+      body: () => [
+        FOR('c', 'c を 0 から 100 まで\n10 ずつ増やしながら', 'for c in range(0, 101, 10):', () => R(0, 100, 10), [
+          CALL('c と c_to_f(c) の結果\nを表示', 'print(f"{c}℃ → {c_to_f(c)}°F")', 'c_to_f', e => [e.c], (e, r) => `${e.c}℃ → ${pf(r)}°F`),
+        ]),
+      ] },
+    { kind: K2, title: '平均・最高・最低を返す関数', desc: '合計を足していきながら、「今までの最高・最低」を更新する。3つの値をまとめて返す。',
+      inputs: [{ name: 'scores', label: '点数のリスト', type: 'list', def: [80, 65, 92, 70], minLen: 1, maxLen: 6 }],
+      floats: ['heikin'],
+      funcs: () => [{ name: 'stats', params: ['scores'], py: 'def stats(scores):', body: [
+        A('total ← 0', 'total = 0', e => { e.total = 0; }),
+        A('saikou ← scores[0]', 'saikou = scores[0]', e => { e.saikou = e.scores[0]; }),
+        A('saitei ← scores[0]', 'saitei = scores[0]', e => { e.saitei = e.scores[0]; }),
+        FOR('x', 'scores の値を順に\nx に入れながら', 'for x in scores:', e => e.scores.slice(), [
+          A('total ← total + x', 'total = total + x', e => { e.total += e.x; }),
+          IF('x ＞ saikou', 'x > saikou', e => e.x > e.saikou, [A('saikou ← x', 'saikou = x', e => { e.saikou = e.x; })]),
+          IF('x ＜ saitei', 'x < saitei', e => e.x < e.saitei, [A('saitei ← x', 'saitei = x', e => { e.saitei = e.x; })]),
+        ]),
+        RET('平均・saikou・saitei\nを返す', 'return total / len(scores), saikou, saitei', e => [e.total / e.scores.length, e.saikou, e.saitei]),
+      ] }],
+      body: () => [
+        CALL('heikin, saikou, saitei ←\nstats(点数のリスト)', inp => `heikin, saikou, saitei = stats(${lit(inp.scores)})`, 'stats', (e, inp) => [inp.scores.slice()],
+          (e, r) => { e.heikin = r[0]; e.saikou = r[1]; e.saitei = r[2]; }),
+        OUT('heikin・saikou・saitei\nを表示', 'print("平均:", heikin, "最高:", saikou, "最低:", saitei)', e => `平均: ${pf(e.heikin)} 最高: ${e.saikou} 最低: ${e.saitei}`),
+      ] },
+  ] },
+  { title: '第8回 総合課題（ミニ作品）', progs: [
+    { kind: EX, title: 'じゃんけんの骨組み（参考例題）', desc: '入力・分岐・繰り返し・関数の組み合わせ。自分の手と、乱数で決まる相手の手をここで決めて動きを追える。※ 課題は自由制作なので、ここには載せていません。',
+      inputs: [
+        { name: 'me', label: '自分の手', type: 'slist', def: ['グー', 'パー', 'チョキ'], minLen: 3, maxLen: 3 },
+        { name: 'cpu', label: '相手の手（乱数）', type: 'slist', def: ['チョキ', 'パー', 'グー'], minLen: 3, maxLen: 3, options: ['グー', 'チョキ', 'パー'] }],
+      head: ['import random', ''],
+      funcs: () => [{ name: 'judge', params: ['me', 'cpu'], py: 'def judge(me, cpu):', body: [
+        IF('me = cpu', 'me == cpu', e => e.me === e.cpu,
+          [RET('"あいこ" を返す', 'return "あいこ"', () => 'あいこ')],
+          [IF('me が cpu に\n勝つ組み合わせ', '(me, cpu) in [("グー", "チョキ"), ("チョキ", "パー"), ("パー", "グー")]',
+            e => ['グー>チョキ', 'チョキ>パー', 'パー>グー'].includes(e.me + '>' + e.cpu),
+            [RET('"勝ち" を返す', 'return "勝ち"', () => '勝ち')],
+            [RET('"負け" を返す', 'return "負け"', () => '負け')], true)]),
+      ] }],
+      body: () => [
+        A('wins ← 0', 'wins = 0', e => { e.wins = 0; }),
+        FOR('i', 'i を 0 から 2 まで\n1 ずつ増やしながら', 'for i in range(3):', () => R(0, 2), [
+          IN('me', 'me を入力', 'me = input("グー / チョキ / パー: ")', (inp, io) => nx(io, 'me', inp.me, 'グー')),
+          A('cpu ← 3つの手から\n乱数で1つ', 'cpu = random.choice(["グー", "チョキ", "パー"])', (e, inp, io) => { e.cpu = nx(io, 'cpu', inp.cpu, 'グー'); io.rand.push(e.cpu); }),
+          CALL('result ← judge(me, cpu)', 'result = judge(me, cpu)', 'judge', e => [e.me, e.cpu], (e, r) => { e.result = r; }),
+          OUT('cpu と result を表示', 'print(f"相手は{cpu} → {result}")', e => `相手は${e.cpu} → ${e.result}`),
+          IF('result = "勝ち"', 'result == "勝ち"', e => e.result === '勝ち', [A('wins ← wins + 1', 'wins += 1', e => { e.wins += 1; })]),
+        ]),
+        OUT('wins を表示', 'print(f"3回中 {wins} 回勝ち")', e => `3回中 ${e.wins} 回勝ち`),
+      ] },
+  ] },
+  { title: '第9回 共通テスト表記とトレース', progs: [
+    { kind: EX, title: '配列の合計と平均', desc: '配列（リスト）の値を先頭から1つずつ足していく。変数の値を1行ずつ追う「トレース」の練習に、予想モードを使ってみよう。',
+      inputs: [{ name: 'Tokuten', label: 'Tokuten', type: 'list', def: [70, 85, 60, 90], minLen: 1 }], floats: ['heikin'],
+      body: () => [
+        LISTA('Tokuten', 'Tokuten'),
+        A('goukei ← 0', 'goukei = 0', e => { e.goukei = 0; }),
+        FOR('i', 'i を 0 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(0, len(Tokuten)):', e => R(0, e.Tokuten.length - 1), [
+          A('goukei ←\ngoukei + Tokuten[i]', 'goukei = goukei + Tokuten[i]', e => { e.goukei += e.Tokuten[e.i]; }),
+        ]),
+        A('heikin ←\ngoukei ÷ 要素数', 'heikin = goukei / len(Tokuten)', e => { e.heikin = e.goukei / e.Tokuten.length; }),
+        OUT('heikin を表示', 'print("平均:", heikin)', e => `平均: ${pf(e.heikin)}`),
+      ] },
+    { kind: K1, title: '偶数の個数を数える', desc: '先に結果を手で予想してから、1ステップずつ動かして確かめよう。',
+      inputs: [{ name: 'Kazu', label: 'Kazu', type: 'list', def: [3, 8, 5, 12, 7], minLen: 1 }],
+      body: () => [
+        LISTA('Kazu', 'Kazu'),
+        A('kosu ← 0', 'kosu = 0', e => { e.kosu = 0; }),
+        FOR('i', inp => `i を 0 から ${inp.Kazu.length - 1} まで\n1 ずつ増やしながら`, inp => `for i in range(0, ${inp.Kazu.length}):`, (e, inp) => R(0, inp.Kazu.length - 1), [
+          IF('Kazu[i] ÷ 2 の余り = 0', 'Kazu[i] % 2 == 0', e => e.Kazu[e.i] % 2 === 0,
+            [A('kosu ← kosu + 1', 'kosu = kosu + 1', e => { e.kosu += 1; })]),
+        ]),
+        OUT('kosu を表示', 'print(kosu)', e => String(e.kosu)),
+      ] },
+    { kind: K2, title: 'n と wa の変化を追う', desc: '10 で割った余りと商をくり返し使っている。このプログラムは何を求めているだろう？',
+      inputs: [{ name: 'n', label: 'n', def: 2748, min: 0, max: 99999999 }],
+      body: () => [
+        A(inp => `n ← ${inp.n}`, inp => `n = ${inp.n}`, (e, inp) => { e.n = inp.n; }),
+        A('wa ← 0', 'wa = 0', e => { e.wa = 0; }),
+        WHILE('n ＞ 0 の間', 'n > 0', e => e.n > 0, [
+          A('wa ←\nwa + (n ÷ 10 の余り)', 'wa = wa + n % 10', e => { e.wa += e.n % 10; }),
+          A('n ← n ÷ 10 の商', 'n = n // 10', e => { e.n = Math.floor(e.n / 10); }),
+          OUT('n と wa を表示', 'print(f"n={n}  wa={wa}")', e => `n=${e.n}  wa=${e.wa}`),
+        ]),
+        OUT('wa を表示', 'print(wa)', e => String(e.wa)),
+      ] },
+  ] },
+  { title: '第10回 最大値・最小値の探索', progs: [
+    { kind: EX, title: '最高気温とその位置', desc: '先頭の値を「今までの最大」として入れ、残りと比べて更新する。添字も記録すると何番目か分かる。',
+      inputs: [{ name: 'Kion', label: 'Kion', type: 'list', def: [18, 23, 21, 27, 25], minLen: 2 }],
+      body: () => [
+        LISTA('Kion', 'Kion'),
+        A('saidai ← Kion[0]', 'saidai = Kion[0]', e => { e.saidai = e.Kion[0]; }),
+        A('basho ← 0', 'basho = 0', e => { e.basho = 0; }),
+        FOR('i', 'i を 1 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(1, len(Kion)):', e => R(1, e.Kion.length - 1), [
+          IF('Kion[i] ＞ saidai', 'Kion[i] > saidai', e => e.Kion[e.i] > e.saidai, [
+            A('saidai ← Kion[i]', 'saidai = Kion[i]', e => { e.saidai = e.Kion[e.i]; }),
+            A('basho ← i', 'basho = i', e => { e.basho = e.i; }),
           ]),
         ]),
-      ]),
-      OUT('data を表示', 'print(data)', e => `[${e.data.join(', ')}]`),
-    ],
-  },
+        OUT('saidai と basho を表示', 'print(f"最高は {saidai} 度（添字 {basho}）")', e => `最高は ${e.saidai} 度（添字 ${e.basho}）`),
+      ] },
+    { kind: K1, title: '最小値とその位置', desc: '例題の「最大」を「最小」に変える。どこを直せばよいか、例題の図と見くらべよう。',
+      inputs: [{ name: 'Time', label: 'Time', type: 'list', float: true, def: [12.4, 11.8, 13.0, 11.5, 12.1], minLen: 2 }],
+      floats: ['Time', 'saisho'],
+      body: () => [
+        LISTA('Time', 'Time', true),
+        A('saisho ← Time[0]', 'saisho = Time[0]', e => { e.saisho = e.Time[0]; }),
+        A('basho ← 0', 'basho = 0', e => { e.basho = 0; }),
+        FOR('i', 'i を 1 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(1, len(Time)):', e => R(1, e.Time.length - 1), [
+          IF('Time[i] ＜ saisho', 'Time[i] < saisho', e => e.Time[e.i] < e.saisho, [
+            A('saisho ← Time[i]', 'saisho = Time[i]', e => { e.saisho = e.Time[e.i]; }),
+            A('basho ← i', 'basho = i', e => { e.basho = e.i; }),
+          ]),
+        ]),
+        OUT('saisho と basho を表示', 'print(f"一番速いタイムは {saisho}（添字 {basho}）")', e => `一番速いタイムは ${pf(e.saisho)}（添字 ${e.basho}）`),
+      ] },
+    { kind: K2, title: '2番目に大きい値', desc: '「最大」と「2番目」の2つを同時に更新していく。最大が変わるとき、前の最大を先に2番目へ移すのがポイント。',
+      inputs: [{ name: 'Kion', label: 'Kion', type: 'list', def: [18, 23, 21, 27, 25], minLen: 2 }],
+      body: () => [
+        LISTA('Kion', 'Kion'),
+        IF('Kion[0] ＞ Kion[1]', 'Kion[0] > Kion[1]', e => e.Kion[0] > e.Kion[1],
+          [A('saidai ← Kion[0]', 'saidai = Kion[0]', e => { e.saidai = e.Kion[0]; }), A('niban ← Kion[1]', 'niban = Kion[1]', e => { e.niban = e.Kion[1]; })],
+          [A('saidai ← Kion[1]', 'saidai = Kion[1]', e => { e.saidai = e.Kion[1]; }), A('niban ← Kion[0]', 'niban = Kion[0]', e => { e.niban = e.Kion[0]; })]),
+        FOR('i', 'i を 2 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(2, len(Kion)):', e => R(2, e.Kion.length - 1), [
+          IF('Kion[i] ＞ saidai', 'Kion[i] > saidai', e => e.Kion[e.i] > e.saidai,
+            [A('niban ← saidai', 'niban = saidai        # 先に今の最大を2番目へ移す', e => { e.niban = e.saidai; }), A('saidai ← Kion[i]', 'saidai = Kion[i]', e => { e.saidai = e.Kion[e.i]; })],
+            [IF('Kion[i] ＞ niban', 'Kion[i] > niban', e => e.Kion[e.i] > e.niban, [A('niban ← Kion[i]', 'niban = Kion[i]', e => { e.niban = e.Kion[e.i]; })], [], true)]),
+        ]),
+        OUT('niban を表示', 'print("2番目に大きい値:", niban)', e => `2番目に大きい値: ${e.niban}`),
+      ] },
+  ] },
+  { title: '第11回 二重ループ', progs: [
+    { kind: EX, title: '同じ値の組を探す', desc: '外側が1回進むごとに、内側は最初から最後まで回る。j を i + 1 から始めると、同じ組を2度調べずに済む。',
+      inputs: [{ name: 'Kibou', label: 'Kibou', type: 'list', def: [3, 7, 3, 9, 7, 1], minLen: 2, maxLen: 7 }],
+      body: () => [
+        LISTA('Kibou', 'Kibou'),
+        FOR('i', 'i を 0 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(0, len(Kibou)):', e => R(0, e.Kibou.length - 1), [
+          FOR('j', 'j を i+1 から 要素数−1\nまで 1 ずつ増やしながら', 'for j in range(i + 1, len(Kibou)):', e => R(e.i + 1, e.Kibou.length - 1), [
+            IF('Kibou[i] = Kibou[j]', 'Kibou[i] == Kibou[j]', e => e.Kibou[e.i] === e.Kibou[e.j],
+              [OUT('i・j と同じ値を表示', 'print(f"添字 {i} と {j} は同じ値 {Kibou[i]}")', e => `添字 ${e.i} と ${e.j} は同じ値 ${e.Kibou[e.i]}`)]),
+          ]),
+        ]),
+      ] },
+    { kind: K1, title: 'サイコロ2個で合計が 7 になる組', desc: '1個目 a と2個目 b のすべての組み合わせ（6 × 6 = 36 通り）を調べる。',
+      inputs: [{ name: 'goal', label: '目の合計', def: 7, min: 2, max: 12 }],
+      body: () => [
+        A('count ← 0', 'count = 0', e => { e.count = 0; }),
+        FOR('a', 'a を 1 から 6 まで\n1 ずつ増やしながら', 'for a in range(1, 7):', () => R(1, 6), [
+          FOR('b', 'b を 1 から 6 まで\n1 ずつ増やしながら', 'for b in range(1, 7):', () => R(1, 6), [
+            IF(inp => `a + b = ${inp.goal}`, inp => `a + b == ${inp.goal}`, (e, inp) => e.a + e.b === inp.goal, [
+              OUT('a と b を表示', 'print(f"{a} と {b}")', e => `${e.a} と ${e.b}`),
+              A('count ← count + 1', 'count = count + 1', e => { e.count += 1; }),
+            ]),
+          ]),
+        ]),
+        OUT('count を表示', 'print("組の数:", count)', e => `組の数: ${e.count}`),
+      ] },
+    { kind: K2, title: '選択ソート', desc: '内側のループで「残りの中の最小値の位置 k」を探し、i 番目と入れ替える。これを先頭から順に繰り返す。',
+      inputs: [{ name: 'A', label: 'A', type: 'list', def: [5, 2, 9, 1, 7], minLen: 2, maxLen: 6 }],
+      body: () => [
+        LISTA('A', 'A'),
+        FOR('i', 'i を 0 から 要素数−2 まで\n1 ずつ増やしながら', 'for i in range(0, len(A) - 1):', e => R(0, e.A.length - 2), [
+          A('k ← i', 'k = i', e => { e.k = e.i; }),
+          FOR('j', 'j を i+1 から 要素数−1\nまで 1 ずつ増やしながら', 'for j in range(i + 1, len(A)):', e => R(e.i + 1, e.A.length - 1), [
+            IF('A[j] ＜ A[k]', 'A[j] < A[k]', e => e.A[e.j] < e.A[e.k], [A('k ← j', 'k = j', e => { e.k = e.j; })]),
+          ]),
+          A('A[i] と A[k] を\n入れ替える', 'A[i], A[k] = A[k], A[i]', e => { const t = e.A[e.i]; e.A[e.i] = e.A[e.k]; e.A[e.k] = t; }),
+          OUT('i と A を表示', 'print(f"i={i}  {A}")', e => `i=${e.i}  ${lit(e.A)}`),
+        ]),
+        OUT('A を表示', 'print(A)', e => lit(e.A)),
+      ] },
+  ] },
+  { title: '第12回 共通テスト型演習', progs: [
+    { kind: EX, title: '図書室のカウンターの待ち時間', desc: '到着時刻と対応にかかる時間から、各人の待ち時間を求める。添字 i は「何人目か」を表す。',
+      inputs: [{ name: 'Touchaku', label: 'Touchaku', type: 'list', def: [0, 2, 3, 10, 11], minLen: 5, maxLen: 5 }, { name: 'Shoyou', label: 'Shoyou', type: 'list', def: [4, 3, 2, 1, 5], minLen: 5, maxLen: 5 }],
+      body: () => [
+        LISTA('Touchaku', 'Touchaku'), LISTA('Shoyou', 'Shoyou'),
+        A('owari ← 0', 'owari = 0', e => { e.owari = 0; }),
+        A('saidai ← 0', 'saidai = 0', e => { e.saidai = 0; }),
+        FOR('i', 'i を 0 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(0, len(Touchaku)):', e => R(0, e.Touchaku.length - 1), [
+          IF('Touchaku[i] ＞ owari', 'Touchaku[i] > owari', e => e.Touchaku[e.i] > e.owari,
+            [A('kaishi ← Touchaku[i]', 'kaishi = Touchaku[i]', e => { e.kaishi = e.Touchaku[e.i]; })],
+            [A('kaishi ← owari', 'kaishi = owari', e => { e.kaishi = e.owari; })]),
+          A('machi ←\nkaishi − Touchaku[i]', 'machi = kaishi - Touchaku[i]', e => { e.machi = e.kaishi - e.Touchaku[e.i]; }),
+          IF('machi ＞ saidai', 'machi > saidai', e => e.machi > e.saidai, [A('saidai ← machi', 'saidai = machi', e => { e.saidai = e.machi; })]),
+          A('owari ←\nkaishi + Shoyou[i]', 'owari = kaishi + Shoyou[i]', e => { e.owari = e.kaishi + e.Shoyou[e.i]; }),
+        ]),
+        OUT('saidai を表示', 'print("最長の待ち時間:", saidai)', e => `最長の待ち時間: ${e.saidai}`),
+      ] },
+    { kind: K1, title: '待ち時間の平均と待った人数', desc: '例題に、待ち時間の合計 goukei と、待った人数 ninzu を数える処理を加える。',
+      inputs: [{ name: 'Touchaku', label: 'Touchaku', type: 'list', def: [0, 2, 3, 10, 11], minLen: 5, maxLen: 5 }, { name: 'Shoyou', label: 'Shoyou', type: 'list', def: [4, 3, 2, 1, 5], minLen: 5, maxLen: 5 }],
+      body: () => [
+        LISTA('Touchaku', 'Touchaku'), LISTA('Shoyou', 'Shoyou'),
+        A('owari ← 0', 'owari = 0', e => { e.owari = 0; }),
+        A('saidai ← 0', 'saidai = 0', e => { e.saidai = 0; }),
+        A('goukei ← 0', 'goukei = 0', e => { e.goukei = 0; }),
+        A('ninzu ← 0', 'ninzu = 0', e => { e.ninzu = 0; }),
+        FOR('i', 'i を 0 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(0, len(Touchaku)):', e => R(0, e.Touchaku.length - 1), [
+          IF('Touchaku[i] ＞ owari', 'Touchaku[i] > owari', e => e.Touchaku[e.i] > e.owari,
+            [A('kaishi ← Touchaku[i]', 'kaishi = Touchaku[i]', e => { e.kaishi = e.Touchaku[e.i]; })],
+            [A('kaishi ← owari', 'kaishi = owari', e => { e.kaishi = e.owari; })]),
+          A('machi ←\nkaishi − Touchaku[i]', 'machi = kaishi - Touchaku[i]', e => { e.machi = e.kaishi - e.Touchaku[e.i]; }),
+          IF('machi ＞ saidai', 'machi > saidai', e => e.machi > e.saidai, [A('saidai ← machi', 'saidai = machi', e => { e.saidai = e.machi; })]),
+          A('goukei ← goukei + machi', 'goukei = goukei + machi', e => { e.goukei += e.machi; }),
+          IF('machi ≧ 1', 'machi >= 1', e => e.machi >= 1, [A('ninzu ← ninzu + 1', 'ninzu = ninzu + 1', e => { e.ninzu += 1; })]),
+          A('owari ←\nkaishi + Shoyou[i]', 'owari = kaishi + Shoyou[i]', e => { e.owari = e.kaishi + e.Shoyou[e.i]; }),
+          OUT('i・kaishi・machi・owari\nを表示', 'print(f"{i}番: 開始 {kaishi}  待ち {machi}  終了 {owari}")', e => `${e.i}番: 開始 ${e.kaishi}  待ち ${e.machi}  終了 ${e.owari}`),
+        ]),
+        OUT('saidai を表示', 'print("最長の待ち時間:", saidai)', e => `最長の待ち時間: ${e.saidai}`),
+        OUT('goukei ÷ 要素数 を表示', 'print("待ち時間の平均:", goukei / len(Touchaku))', e => `待ち時間の平均: ${pf(e.goukei / e.Touchaku.length)}`),
+        OUT('ninzu を表示', 'print("待った人の数:", ninzu)', e => `待った人の数: ${e.ninzu}`),
+      ] },
+    { kind: K2, title: '印刷機に作品を割り当てる', desc: '作品を順に、先に空く印刷機 k へ割り当てる。内側のループは「一番早く空く印刷機」を探している。',
+      inputs: [{ name: 'Jikan', label: 'Jikan', type: 'list', def: [5, 3, 4, 2, 6], minLen: 1, maxLen: 6 }, { name: 'dai', label: '印刷機の台数', def: 2, min: 2, max: 3 }],
+      body: () => [
+        LISTA('Jikan', 'Jikan'),
+        A(inp => `Aki ← ${lit(Array(inp.dai).fill(0))}`, inp => `Aki = ${lit(Array(inp.dai).fill(0))}`, (e, inp) => { e.Aki = Array(inp.dai).fill(0); }),
+        FOR('i', 'i を 0 から Jikan の\n要素数−1 まで 1 ずつ', 'for i in range(0, len(Jikan)):', e => R(0, e.Jikan.length - 1), [
+          A('k ← 0', 'k = 0', e => { e.k = 0; }),
+          FOR('j', 'j を 1 から Aki の\n要素数−1 まで 1 ずつ', 'for j in range(1, len(Aki)):', e => R(1, e.Aki.length - 1), [
+            IF('Aki[j] ＜ Aki[k]', 'Aki[j] < Aki[k]', e => e.Aki[e.j] < e.Aki[e.k], [A('k ← j', 'k = j', e => { e.k = e.j; })]),
+          ]),
+          A('kaishi ← Aki[k]', 'kaishi = Aki[k]', e => { e.kaishi = e.Aki[e.k]; }),
+          A('Aki[k] ←\nkaishi + Jikan[i]', 'Aki[k] = kaishi + Jikan[i]', e => { e.Aki[e.k] = e.kaishi + e.Jikan[e.i]; }),
+          OUT('i・k・kaishi・Aki[k]\nを表示', 'print(f"作品{i}: 印刷機{k}  開始 {kaishi}  終了 {Aki[k]}")', e => `作品${e.i}: 印刷機${e.k}  開始 ${e.kaishi}  終了 ${e.Aki[e.k]}`),
+        ]),
+        A('saigo ← Aki[0]', 'saigo = Aki[0]', e => { e.saigo = e.Aki[0]; }),
+        FOR('j', 'j を 1 から Aki の\n要素数−1 まで 1 ずつ', 'for j in range(1, len(Aki)):', e => R(1, e.Aki.length - 1), [
+          IF('Aki[j] ＞ saigo', 'Aki[j] > saigo', e => e.Aki[e.j] > e.saigo, [A('saigo ← Aki[j]', 'saigo = Aki[j]', e => { e.saigo = e.Aki[e.j]; })]),
+        ]),
+        OUT('saigo を表示', 'print("全部終わる時刻:", saigo)', e => `全部終わる時刻: ${e.saigo}`),
+      ] },
+  ] },
+  { title: '補充（探索と整列）', progs: [
+    { kind: SUP, title: '線形探索', desc: 'リストの先頭から1つずつ調べて、探している値（target）の場所を見つける。',
+      inputs: [{ name: 'data', label: 'data', type: 'list', def: [14, 3, 27, 8, 19], minLen: 1 }, { name: 'target', label: '探す値', def: 27, min: -999, max: 999 }],
+      body: () => [
+        LISTA('data', 'data'),
+        IN('target', 'target を入力', 'target = int(input("探す値: "))'),
+        A('found ← −1', 'found = -1', e => { e.found = -1; }),
+        FOR('i', 'i を 0 から 要素数−1 まで\n1 ずつ増やしながら', 'for i in range(0, len(data)):', e => R(0, e.data.length - 1), [
+          IF('data[i] = target', 'data[i] == target', e => e.data[e.i] === e.target, [A('found ← i', 'found = i', e => { e.found = e.i; })]),
+        ]),
+        IF('found ≧ 0', 'found >= 0', e => e.found >= 0,
+          [OUT('found を表示', 'print(f"data[{found}] にあります")', e => `data[${e.found}] にあります`)],
+          [OUT('「見つかりません」\nと表示', 'print("見つかりません")', () => '見つかりません')]),
+      ] },
+    { kind: SUP, title: 'バブルソート', desc: 'となり同士をくらべて、順番が逆なら入れかえる。選択ソート（第11回）との動きの違いを見くらべよう。',
+      inputs: [{ name: 'data', label: 'data', type: 'list', def: [5, 2, 8, 3], minLen: 2, maxLen: 6 }],
+      body: () => [
+        LISTA('data', 'data'),
+        A('n ← data の要素数', 'n = len(data)', e => { e.n = e.data.length; }),
+        FOR('i', 'i を 0 から n−2 まで\n1 ずつ増やしながら', 'for i in range(0, n - 1):', e => R(0, e.n - 2), [
+          FOR('j', 'j を 0 から n−2−i まで\n1 ずつ増やしながら', 'for j in range(0, n - 1 - i):', e => R(0, e.n - 2 - e.i), [
+            IF('data[j] ＞ data[j+1]', 'data[j] > data[j + 1]', e => e.data[e.j] > e.data[e.j + 1], [
+              A('data[j] と data[j+1] を\n入れ替える', 'data[j], data[j + 1] = data[j + 1], data[j]', e => { const t = e.data[e.j]; e.data[e.j] = e.data[e.j + 1]; e.data[e.j + 1] = t; }),
+            ]),
+          ]),
+        ]),
+        OUT('data を表示', 'print(data)', e => lit(e.data)),
+      ] },
+  ] },
 ];
+
+/* 課題の Python を見せるかどうか。
+   ふだんは見せない（フローチャートを読んで自分で書く練習にするため）。
+   アドレスの最後に ?teacher=1 を付けて開くと、課題でも Python を表示する（解説用）。 */
+const TEACHER = new URLSearchParams(location.search).has('teacher');
 
 /* ---------- 準備：ノードに番号・表示文をつける ---------- */
 const STEP_LIMIT = 3000;
-let prog, inp, T = [], idx = 0, lineOf = {};
+let ex, prog, inp, T = [], idx = 0, lineOf = {}, pyLines = [], dump = {}, floatSet = new Set(), showPy = true;
 let playing = null, predict = false, pending = false, fb = null, answered = new Set(), score = { ok: 0, n: 0 };
 
 function prepare(block, st) {
@@ -306,9 +695,9 @@ function prepare(block, st) {
     const s = x => (typeof x === 'function' ? x(inp) : x);
     n.pyText = s(n.py);
     let fc = s(n.fc);
+    n.fcText = fc.replace(/\n/g, ' ');
     if (n.t === 'for' || n.t === 'while') { n.loopName = 'ループ' + (++st.loop); fc = n.loopName + '\n' + fc; n.endId = n.id + 'e'; }
     n.lines = fc.split('\n');
-    n.fcText = s(n.fc).replace(/\n/g, ' ');
     if (n.then) prepare(n.then, st);
     if (n.els) prepare(n.els, st);
     if (n.body) prepare(n.body, st);
@@ -316,74 +705,106 @@ function prepare(block, st) {
 }
 
 /* ---------- 実行して、全ステップの記録（トレース）を作る ---------- */
-const fmt = v => Array.isArray(v) ? '[' + v.join(', ') + ']' : (typeof v === 'string' ? '"' + v + '"' : String(v));
+function fmt(v, name) {
+  if (Array.isArray(v)) return '[' + v.map(x => fmt(x, name)).join(', ') + ']';
+  if (typeof v === 'string') return '"' + v + '"';
+  if (typeof v === 'number' && floatSet.has(name)) return pf(v);
+  return String(v);
+}
+const clone = x => JSON.parse(JSON.stringify(x));
 
 function diffEnv(a, b) {           // b で変わった所の一覧
   const ch = [];
   for (const k of Object.keys(b)) {
     if (Array.isArray(b[k]) && Array.isArray(a[k]) && a[k].length === b[k].length) {
       b[k].forEach((v, i) => { if (v !== a[k][i]) ch.push({ name: k, i, label: `${k}[${i}]`, val: v }); });
-    } else if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) ch.push({ name: k, label: k, val: b[k], isNew: !(k in a) });
+    } else if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) ch.push({ name: k, label: k, val: b[k] });
   }
   return ch;
 }
+const chText = ch => ch.map(c => `${c.label} が ${fmt(c.val, c.name)} になった`).join('、');
 
 function buildTrace() {
-  const env = {}, out = [], S = [];
+  const frames = [{ name: 'メイン', env: {} }], out = [], S = [];
+  const io = { k: {}, stdin: [], rand: [] };
+  let env = frames[0].env;
   const snap = (id, msg, extra = {}) => {
     if (S.length >= STEP_LIMIT) throw new Error('limit');
-    S.push({ id, env: JSON.parse(JSON.stringify(env)), out: out.slice(), msg, ...extra });
+    S.push({ id, env: clone(env), frames: clone(frames), out: out.slice(), msg, ...extra });
   };
-  const exec = block => {
-    for (const n of block) {
-      if (n.t === 'assign') {
-        const before = JSON.parse(JSON.stringify(env));
-        n.run(env, inp);
-        const ch = diffEnv(before, env);
-        const msg = ch.length ? ch.map(c => `${c.label} が ${fmt(c.val)} になった`).join('、')
-          : '代入したが、値は前と同じだった';
-        let q = null;
-        if (ch.length === 1 && !Array.isArray(ch[0].val)) q = { kind: 'value', label: ch[0].label, answer: ch[0].val };
-        snap(n.id, msg, { q });
-      } else if (n.t === 'input') {
-        env[n.name] = inp[n.name];
-        snap(n.id, `${n.name} に ${fmt(env[n.name])} が入力された`);
-      } else if (n.t === 'output') {
-        const s = n.val(env); out.push(s);
-        snap(n.id, `「${s}」と表示した`);
-      } else if (n.t === 'if') {
-        const r = !!n.cond(env);
-        snap(n.id, `条件「${n.fcText}」は${r ? '成り立つ → Yes へ進む' : '成り立たない → No へ進む'}`,
-          { branch: r ? 'yes' : 'no', q: { kind: 'yn', text: `条件「${n.fcText}」は成り立つ？`, answer: r } });
-        exec(r ? n.then : n.els);
-      } else if (n.t === 'while') {
-        for (;;) {
-          const r = !!n.cond(env);
-          const c = n.fcText.replace(/ の間$/, '');
-          snap(n.id, r ? `条件「${c}」が成り立つので、繰り返しの中へ進む` : `条件「${c}」が成り立たないので、繰り返しを終わる`,
-            { q: { kind: 'yn', text: `条件「${c}」は成り立つ？（繰り返しを続ける？）`, answer: r } });
-          if (!r) break;
-          exec(n.body);
-          snap(n.endId, `${n.loopName} の先頭に戻って、条件をもう一度調べる`);
-        }
-      } else if (n.t === 'for') {
-        const a = n.from(env), b = n.to(env);
-        if (a > b) { snap(n.id, `繰り返す範囲がない（${a} から ${b}）ので、1回も繰り返さない`); continue; }
-        for (let k = a; k <= b; k++) {
-          env[n.v] = k;
-          snap(n.id, k === a ? `${n.v} を ${a} にして、繰り返しを始める（${b} まで）` : `${n.v} を 1 増やして ${k} にする`);
-          exec(n.body);
-          snap(n.endId, k < b ? `${n.loopName} の先頭に戻る` : `${n.v} が ${b} まで進んだので、${n.loopName} を終わる`);
-        }
+  const step = n => {
+    if (n.t === 'assign') {
+      const before = clone(env);
+      n.run(env, inp, io);
+      const ch = diffEnv(before, env);
+      let q = null;
+      if (ch.length === 1 && !Array.isArray(ch[0].val)) q = { kind: 'value', label: ch[0].label, answer: ch[0].val };
+      snap(n.id, ch.length ? chText(ch) : '代入したが、値は前と同じだった', { q });
+    } else if (n.t === 'input') {
+      env[n.name] = n.get ? n.get(inp, io) : inp[n.name];
+      io.stdin.push(String(env[n.name]));
+      snap(n.id, `${n.name} に ${fmt(env[n.name], n.name)} が入力された`);
+    } else if (n.t === 'output') {
+      const s = n.val(env, inp); out.push(s);
+      snap(n.id, `「${s}」と表示した`);
+    } else if (n.t === 'break') {
+      snap(n.id, 'break：繰り返しを抜けて、ループの下へ進む');
+      return 'break';
+    } else if (n.t === 'ret') {
+      const v = n.val(env, inp);
+      snap(n.id, `${Array.isArray(v) ? v.map(x => fmt(x)).join('、') : (n.float ? pf(v) : fmt(v))} を返して、呼び出した所へ戻る`);
+      return { ret: v };
+    } else if (n.t === 'call') {
+      const f = prog.funcs.find(x => x.name === n.fn), args = n.args(env, inp);
+      snap(n.id, `関数 ${f.name} を呼び出す（${f.params.map((p, i) => `${p} = ${fmt(args[i])}`).join('、')}）`);
+      const caller = env;
+      env = {}; f.params.forEach((p, i) => { env[p] = clone(args[i]); });
+      frames.push({ name: f.name, env });
+      snap(f.id, `関数 ${f.name} の処理を始める`);
+      const r = exec(f.body);
+      frames.pop(); env = caller;
+      const before = clone(env), o = n.done(env, r ? r.ret : undefined, inp), ch = diffEnv(before, env);
+      if (typeof o === 'string') out.push(o);
+      snap(n.id, '関数から戻った。' + (ch.length ? chText(ch) : '') + (typeof o === 'string' ? `「${o}」と表示した` : ''));
+    } else if (n.t === 'if') {
+      const r = !!n.cond(env, inp);
+      snap(n.id, `条件「${n.fcText}」は${r ? '成り立つ → Yes へ進む' : '成り立たない → No へ進む'}`,
+        { branch: r ? 'yes' : 'no', q: { kind: 'yn', text: `条件「${n.fcText}」は成り立つ？`, answer: r } });
+      return exec(r ? n.then : n.els);
+    } else if (n.t === 'while') {
+      for (;;) {
+        const r = !!n.cond(env, inp), c = n.fcText.replace(/ の間$/, '');
+        if (n.forever) snap(n.id, '条件なしで繰り返す（抜けるのは break のときだけ）');
+        else snap(n.id, r ? `条件「${c}」が成り立つので、繰り返しの中へ進む` : `条件「${c}」が成り立たないので、繰り返しを終わる`,
+          { q: { kind: 'yn', text: `条件「${c}」は成り立つ？（繰り返しを続ける？）`, answer: r } });
+        if (!r) break;
+        const s = exec(n.body);
+        if (s === 'break') break;
+        if (s) return s;
+        snap(n.endId, n.forever ? `${n.loopName} の先頭に戻る` : `${n.loopName} の先頭に戻って、条件をもう一度調べる`);
+      }
+    } else if (n.t === 'for') {
+      const vals = n.vals(env, inp);
+      if (!vals.length) { snap(n.id, '繰り返す値が1つもないので、1回も繰り返さない'); return; }
+      for (let k = 0; k < vals.length; k++) {
+        env[n.v] = vals[k];
+        snap(n.id, k === 0 ? `${n.v} を ${fmt(vals[k])} にして、繰り返しを始める` : `${n.v} を次の値 ${fmt(vals[k])} に進める`);
+        const s = exec(n.body);
+        if (s === 'break') break;
+        if (s) return s;
+        snap(n.endId, k < vals.length - 1 ? `${n.loopName} の先頭に戻る` : `最後の値まで繰り返したので、${n.loopName} を終わる`);
       }
     }
   };
+  const exec = block => { for (const n of block) { const r = step(n); if (r) return r; } };
   snap('start', '「次へ ▶」を押して、1ステップずつ進めよう');
-  try { exec(prog); snap('end', 'プログラムが終了した'); }
+  try { exec(prog.body); snap('end', 'プログラムが終了した'); }
   catch (err) {
     if (err.message !== 'limit') throw err;
-    S.push({ id: S[S.length - 1].id, env: S[S.length - 1].env, out: S[S.length - 1].out, msg: `ステップ数が ${STEP_LIMIT} をこえたので、ここで打ち切りました（入力を小さくしてください）` });
+    const l = S[S.length - 1];
+    S.push({ id: l.id, env: l.env, frames: l.frames, out: l.out, msg: `ステップ数が ${STEP_LIMIT} をこえたので、ここで打ち切りました（入力を小さくしてください）` });
   }
+  dump = { stdin: io.stdin, rand: io.rand, out };
   return S;
 }
 
@@ -408,24 +829,40 @@ function buildPython() {
       else add(n.pyText, ind, [n.id]);
     }
   };
-  gen(prog, 0);
-  document.getElementById('code').innerHTML = L.map((l, i) =>
-    `<div class="ln" data-line="${i}" data-ids="${l.ids.join(' ')}"><span class="no">${i + 1}</span><span>${esc(l.text)}</span></div>`).join('');
+  (ex.head || []).forEach(h => add(h, 0, []));
+  for (const f of prog.funcs) { add(f.py, 0, [f.id, f.id + 'x']); gen(f.body, 1); add('', 0, []); }
+  gen(prog.body, 0);
+  pyLines = L.map(l => l.text);
+  $('codeTitle').textContent = 'Python プログラム' + (showPy && ex.kind !== EX && ex.kind !== SUP ? '（教員用表示）' : '');
+  if (!showPy) {
+    lineOf = {};
+    $('code').innerHTML = '<p class="notice">この課題の Python は表示していません。<br>フローチャートを読んで、Colab のノートに自分でプログラムを書いてみよう。<br>書けたら、同じ入力で実行して、このページの「表示（出力）」と同じになるか確かめよう。</p>';
+    return;
+  }
+  $('code').innerHTML = L.map((l, i) =>
+    `<div class="ln" data-line="${i}" data-ids="${l.ids.join(' ')}"><span class="no">${i + 1}</span><span>${esc(l.text) || ' '}</span></div>`).join('');
 }
 
 /* ---------- フローチャートを描く ---------- */
-const W = 200, GY = 28, GX = 36, DH = 74, HE = 38, TH = 36, TW = 120;
+const W = 210, GY = 28, GX = 36, DH = 78, HE = 38, TH = 36, TW = 120;
+const vis = b => b.filter(n => n.t !== 'break');
+const endsBreak = b => b.length > 0 && b[b.length - 1].t === 'break';
+let mctx = [];
 
 function measureBlock(b) {
   let L = 0, R = 0, h = 0;
-  b.forEach((n, i) => { measureNode(n); L = Math.max(L, n.m.L); R = Math.max(R, n.m.R); h += n.m.h + (i ? GY : 0); });
+  vis(b).forEach((n, i) => { measureNode(n); L = Math.max(L, n.m.L); R = Math.max(R, n.m.R); h += n.m.h + (i ? GY : 0); });
   return (b.m = { L, R, h });
 }
 function measureNode(n) {
   const own = Math.max(44, 22 + n.lines.length * 18);
   if (n.t === 'if') {
     const t = measureBlock(n.then), e = measureBlock(n.els);
-    if (!n.els.length) {
+    if ((endsBreak(n.then) || endsBreak(n.els)) && mctx.length) mctx[mctx.length - 1].brk = true;
+    if (!n.els.length && endsBreak(n.then)) {          // Yes が右へ出て、そのままループの外へ
+      const dr = Math.max(t.L + GX / 2, W / 2 + 28);
+      n.m = { L: W / 2, R: t.h ? dr + t.R : W / 2 + 24, h: DH + GY + (t.h ? t.h + 18 : 0), dr, side: true };
+    } else if (!vis(n.els).length) {
       const bx = Math.max(t.R, W / 2) + 34;
       n.m = { L: Math.max(t.L, W / 2), R: bx + 8, h: DH + GY + t.h + GY, bx };
     } else {
@@ -433,19 +870,22 @@ function measureNode(n) {
       n.m = { L: dl + t.L, R: dr + e.R, h: DH + GY + Math.max(t.h, e.h) + GY, dl, dr };
     }
   } else if (n.t === 'for' || n.t === 'while') {
-    const b = measureBlock(n.body);
-    n.m = { L: Math.max(W / 2, b.L), R: Math.max(W / 2, b.R), h: own + GY + (b.h ? b.h + GY : 0) + HE, hs: own };
+    mctx.push({ brk: false });
+    const b = measureBlock(n.body), c = mctx.pop(), r = Math.max(W / 2, b.R);
+    n.m = { L: Math.max(W / 2, b.L), R: r + (c.brk ? 26 : 0), rx: r + 16, brk: c.brk,
+      h: own + GY + (b.h ? b.h + GY : 0) + HE + (c.brk ? 24 : 0), hs: own };
   } else n.m = { L: W / 2, R: W / 2, h: own };
 }
 
 function drawFlow() {
-  const P = [];   // SVG の部品
-  const line = (pts, arrow) => {
-    P.push(`<polyline class="edge" points="${pts.map(p => p.join(',')).join(' ')}"/>`);
-    if (!arrow) return;
-    const [x1, y1] = pts[pts.length - 2], [x2, y2] = pts[pts.length - 1];
+  const P = [], pctx = [];   // SVG の部品、break の出口待ち
+  const arrowHead = (x1, y1, x2, y2) => {
     const a = Math.atan2(y2 - y1, x2 - x1), s = 8, c = Math.cos(a), d = Math.sin(a);
     P.push(`<polygon class="ahead" points="${x2},${y2} ${x2 - s * c + s * .45 * d},${y2 - s * d - s * .45 * c} ${x2 - s * c - s * .45 * d},${y2 - s * d + s * .45 * c}"/>`);
+  };
+  const line = (pts, arrow) => {
+    P.push(`<polyline class="edge" points="${pts.map(p => p.join(',')).join(' ')}"/>`);
+    if (arrow) arrowHead(...pts[pts.length - 2], ...pts[pts.length - 1]);
   };
   const text = (lines, cx, cy) => {
     const y0 = cy - (lines.length - 1) * 9;
@@ -460,21 +900,34 @@ function drawFlow() {
     else if (kind === 'if') s = poly([[cx, y], [x + w, y + h / 2], [cx, y + h], [x, y + h / 2]]);
     else if (kind === 'ls') s = poly([[x + 14, y], [x + w - 14, y], [x + w, y + 14], [x + w, y + h], [x, y + h], [x, y + 14]]);
     else if (kind === 'le') s = poly([[x, y], [x + w, y], [x + w, y + h - 14], [x + w - 14, y + h], [x + 14, y + h], [x, y + h - 14]]);
+    else if (kind === 'call') s = `<path class="shape" d="M${x},${y}h${w}v${h}h${-w}z M${x + 10},${y}v${h} M${x + w - 10},${y}v${h}"/>`;
     else s = `<rect class="shape" x="${x}" y="${y}" width="${w}" height="${h}"/>`;
     P.push(`<g class="node" data-id="${id}">${s}${text(lines, cx, y + h / 2)}</g>`);
   };
   const label = (id, which, x, y, anchor) =>
     P.push(`<text class="blabel" id="lb-${id}-${which}" x="${x}" y="${y}" text-anchor="${anchor}">${which === 'yes' ? 'Yes' : 'No'}</text>`);
+  const rail = (brk, pts) => pctx[pctx.length - 1].push({ id: brk.id, pts });
 
   const placeBlock = (b, cx, y) => {
-    b.forEach((n, i) => { if (i) { line([[cx, y], [cx, y + GY]], true); y += GY; } y = placeNode(n, cx, y); });
+    vis(b).forEach((n, i) => { if (i) { line([[cx, y], [cx, y + GY]], true); y += GY; } y = placeNode(n, cx, y); });
     return y;
   };
   const placeNode = (n, cx, y) => {
     if (n.t === 'if') {
       shape(n.id, 'if', cx, y, W, DH, n.lines);
-      const ym = y + DH / 2, yb = y + DH, yM = y + n.m.h;
-      if (!n.els.length) {
+      const ym = y + DH / 2, yb = y + DH, yM = y + n.m.h, brk = b => b[b.length - 1];
+      if (n.m.side) {
+        line([[cx, yb], [cx, yM]]);
+        label(n.id, 'no', cx + 8, yb + 15, 'start');
+        label(n.id, 'yes', cx + W / 2 + 2, ym - 7, 'start');
+        if (!vis(n.then).length) rail(brk(n.then), [[cx + W / 2, ym]]);
+        else {
+          const xr = cx + n.m.dr;
+          line([[cx + W / 2, ym], [xr, ym], [xr, yb + GY]], true);
+          const yT = placeBlock(n.then, xr, yb + GY);
+          rail(brk(n.then), [[xr, yT], [xr, yT + 12]]);
+        }
+      } else if (!vis(n.els).length) {
         line([[cx, yb], [cx, yb + GY]], true);
         label(n.id, 'yes', cx + 8, yb + 15, 'start');
         const yT = placeBlock(n.then, cx, yb + GY);
@@ -490,7 +943,8 @@ function drawFlow() {
         line([[cx + W / 2, ym], [xr, ym], [xr, yb + GY]], true);
         label(n.id, 'no', cx + W / 2 + 2, ym - 7, 'start');
         const yE = placeBlock(n.els, xr, yb + GY);
-        line([[xr, yE], [xr, yM - GY / 2], [cx, yM - GY / 2]]);
+        if (endsBreak(n.els)) rail(brk(n.els), [[xr, yE], [xr, yE + 12]]);
+        else line([[xr, yE], [xr, yM - GY / 2], [cx, yM - GY / 2]]);
         line([[cx, yM - GY / 2], [cx, yM]]);
       }
       return yM;
@@ -499,32 +953,67 @@ function drawFlow() {
       shape(n.id, 'ls', cx, y, W, n.m.hs, n.lines);
       let y2 = y + n.m.hs;
       line([[cx, y2], [cx, y2 + GY]], true); y2 += GY;
-      if (n.body.length) { y2 = placeBlock(n.body, cx, y2); line([[cx, y2], [cx, y2 + GY]], true); y2 += GY; }
+      pctx.push([]);
+      if (vis(n.body).length) { y2 = placeBlock(n.body, cx, y2); line([[cx, y2], [cx, y2 + GY]], true); y2 += GY; }
       shape(n.endId, 'le', cx, y2, W, HE, [n.loopName]);
-      return y2 + HE;
+      y2 += HE;
+      const rails = pctx.pop();
+      if (n.m.brk) {
+        const rx = cx + n.m.rx, ye = y2 + 12;
+        for (const r of rails) {
+          const pts = [...r.pts, [rx, r.pts[r.pts.length - 1][1]], [rx, ye], [cx, ye]];
+          P.push(`<g class="node rail" data-id="${r.id}"><polyline class="shape" points="${pts.map(p => p.join(',')).join(' ')}"/></g>`);
+          arrowHead(rx, ye, cx, ye);
+        }
+        line([[cx, y2], [cx, y2 + 24]]); y2 += 24;
+      }
+      return y2;
     }
-    const kind = (n.t === 'input' || n.t === 'output') ? 'io' : 'proc';
+    const kind = (n.t === 'input' || n.t === 'output') ? 'io' : n.t === 'call' ? 'call' : 'proc';
     shape(n.id, kind, cx, y, W, n.m.h, n.lines);
     return y + n.m.h;
   };
 
-  const m = measureBlock(prog), pad = 14;
-  const cx = pad + Math.max(m.L, TW / 2), width = cx + Math.max(m.R, TW / 2) + pad;
-  let y = pad;
-  shape('start', 'term', cx, y, TW, TH, ['はじめ']); y += TH;
-  line([[cx, y], [cx, y + GY]], true); y += GY;
-  y = placeBlock(prog, cx, y);
-  line([[cx, y], [cx, y + GY]], true); y += GY;
-  shape('end', 'term', cx, y, TW, TH, ['おわり']); y += TH + pad;
+  const charts = [{ s: 'start', st: 'はじめ', e: 'end', et: 'おわり', body: prog.body },
+    ...prog.funcs.map(f => ({ s: f.id, st: `関数 ${f.name}(${f.params.join(', ')})`, e: f.id + 'x', et: '戻る', body: f.body }))];
+  const pad = 14; let x0 = pad, H = 0;
+  for (const c of charts) {
+    mctx = [];
+    const m = measureBlock(c.body), tw = Math.max(TW, c.st.length * 10 + 36);
+    const cx = x0 + Math.max(m.L, tw / 2);
+    let y = pad;
+    shape(c.s, 'term', cx, y, tw, TH, [c.st]); y += TH;
+    line([[cx, y], [cx, y + GY]], true); y += GY;
+    y = placeBlock(c.body, cx, y);
+    line([[cx, y], [cx, y + GY]], true); y += GY;
+    shape(c.e, 'term', cx, y, TW, TH, [c.et]); y += TH + pad;
+    H = Math.max(H, y);
+    x0 = cx + Math.max(m.R, tw / 2) + 44;
+  }
+  const width = x0 - 44 + pad;
+  // 横に広い図は、文字が小さくなりすぎない範囲（8割まで）で縮めて表示する。それ以上は横スクロール
+  const fit = $('flowWrap').clientWidth - 24, shown = Math.round(Math.max(width * 0.8, Math.min(width, fit)));
   document.getElementById('flowWrap').innerHTML =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${y}" width="${width}" height="${y}" role="img" aria-label="フローチャート">${P.join('')}</svg>`;
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${shown}" role="img" aria-label="フローチャート">${P.join('')}</svg>`;
 }
 
 /* ---------- 画面の更新 ---------- */
-const $ = id => document.getElementById(id);
+function $(id) { return document.getElementById(id); }
+
+function varTable(env, prevEnv) {
+  const ch = prevEnv ? diffEnv(prevEnv, env) : [];
+  return Object.keys(env).map(k => {
+    const v = env[k];
+    const cell = Array.isArray(v)
+      ? (v.length ? '<span class="cells">' + v.map((x, i) => `<span class="cell${ch.some(c => c.name === k && (c.i === i || c.i === undefined)) ? ' chg' : ''}"><i>${i}</i><b>${esc(typeof x === 'string' ? x : fmt(x, k))}</b></span>`).join('') + '</span>'
+        : `<span class="val${ch.some(c => c.name === k) ? ' chg' : ''}">[ ]（空）</span>`)
+      : `<span class="val${ch.some(c => c.name === k) ? ' chg' : ''}">${esc(fmt(v, k))}</span>`;
+    return `<tr><th>${esc(k)}</th><td>${cell}</td></tr>`;
+  }).join('');
+}
 
 function render() {
-  const st = T[idx], prev = idx ? T[idx - 1] : { env: {} };
+  const st = T[idx], prev = idx ? T[idx - 1] : null;
   const pendId = pending ? T[idx + 1].id : null;
   document.querySelectorAll('.node').forEach(g => {
     g.classList.toggle('cur', g.dataset.id === st.id);
@@ -537,16 +1026,15 @@ function render() {
     l.classList.toggle('pend', pendId !== null && +l.dataset.line === lineOf[pendId]);
   });
 
-  // 変数の表
-  const ch = idx ? diffEnv(prev.env, st.env) : [];
-  const names = Object.keys(st.env);
-  $('vars').innerHTML = names.length ? '<table>' + names.map(k => {
-    const v = st.env[k];
-    const cell = Array.isArray(v)
-      ? '<span class="cells">' + v.map((x, i) => `<span class="cell${ch.some(c => c.name === k && (c.i === i || c.i === undefined)) ? ' chg' : ''}"><i>${i}</i><b>${esc(x)}</b></span>`).join('') + '</span>'
-      : `<span class="val${ch.some(c => c.name === k) ? ' chg' : ''}">${esc(fmt(v))}</span>`;
-    return `<tr><th>${esc(k)}</th><td>${cell}</td></tr>`;
-  }).join('') + '</table>' : '<span class="empty">まだ変数はありません</span>';
+  // 変数の表（関数の中にいるときは、関数ごとに分けて表示する）
+  const multi = prog.funcs.length > 0;
+  const html = st.frames.map((f, i) => {
+    const pf_ = prev && prev.frames[i] && prev.frames.length >= st.frames.length ? prev.frames[i].env : (prev && prev.frames[i] ? prev.frames[i].env : (i === 0 ? {} : null));
+    const rows = varTable(f.env, i === st.frames.length - 1 ? (pf_ || {}) : null);
+    const cap = multi ? `<div class="frame${i < st.frames.length - 1 ? ' dim' : ''}">${i === 0 ? 'メインの変数' : `関数 ${esc(f.name)} の中の変数`}</div>` : '';
+    return cap + (rows ? `<table${i < st.frames.length - 1 ? ' class="dim"' : ''}>${rows}</table>` : '<span class="empty">まだ変数はありません</span>');
+  }).join('');
+  $('vars').innerHTML = html;
   $('out').innerHTML = st.out.length ? esc(st.out.join('\n')) : '<span class="empty">まだ何も表示されていません</span>';
 
   // 説明と予想モードの問題
@@ -557,7 +1045,7 @@ function render() {
   if (q) {
     quiz.innerHTML = q.kind === 'yn'
       ? `<span>${esc(q.text)}</span><button data-a="yes">Yes（成り立つ）</button><button data-a="no">No（成り立たない）</button><button data-a="skip">答えを見る</button>`
-      : `<span>この処理のあと、<b>${esc(q.label)}</b> の値は？</span><input type="text" id="qIn" inputmode="numeric" autocomplete="off"><button data-a="val">答える</button><button data-a="skip">答えを見る</button>`;
+      : `<span>この処理のあと、<b>${esc(q.label)}</b> の値は？</span><input type="text" id="qIn" autocomplete="off"><button data-a="val">答える</button><button data-a="skip">答えを見る</button>`;
     const qi = $('qIn'); if (qi) qi.focus();
   } else quiz.innerHTML = '';
 
@@ -594,9 +1082,9 @@ function answer(kind) {
   if (!pending) return;
   const q = T[idx + 1].q; let ok = false;
   if (kind === 'val') {
-    const raw = $('qIn').value.trim().replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/^[−ー－]/, '-');
+    const raw = $('qIn').value.trim().replace(/[０-９．]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/^[−ー－]/, '-');
     if (raw === '') { $('qIn').focus(); return; }
-    ok = typeof q.answer === 'number' ? Number(raw) === q.answer : raw.replace(/^["'「]|["'」]$/g, '') === String(q.answer);
+    ok = typeof q.answer === 'number' ? Math.abs(Number(raw) - q.answer) < 1e-9 : raw.replace(/^["'「]|["'」]$/g, '') === String(q.answer);
   } else if (kind !== 'skip') ok = (kind === 'yes') === q.answer;
   answered.add(idx + 1); score.n++; if (ok) score.ok++;
   fb = { ok }; pending = false; idx++; render();
@@ -607,49 +1095,67 @@ function togglePlay() {
   playing = setInterval(next, +$('speed').value); render();
 }
 
-/* ---------- 例題の読みこみ ---------- */
-function readInputs(ex) {
+/* ---------- 例題・課題の読みこみ ---------- */
+function readInputs() {
   const v = {}; let err = '';
-  for (const d of ex.inputs) {
+  for (const d of ex.inputs || []) {
     const el = $('in-' + d.name);
-    if (d.list) {
-      const parts = el.value.replace(/[、，\s]+/g, ',').split(',').filter(s => s !== '');
-      const nums = parts.map(Number);
-      if (nums.length < 2 || nums.length > 8 || nums.some(x => !Number.isInteger(x) || Math.abs(x) > 999)) { err = `${d.label} は整数を 2〜8 個、カンマで区切って入れてください`; v[d.name] = d.def.slice(); }
-      else v[d.name] = nums;
-    } else {
-      let x = Math.round(Number(el.value));
-      if (el.value === '' || !Number.isFinite(x)) x = d.def;
-      x = Math.max(d.min, Math.min(d.max, x));
-      v[d.name] = x;
+    if (!el) { v[d.name] = Array.isArray(d.def) ? d.def.slice() : d.def; continue; }   // 入力欄を作り直している途中
+    const raw = el.value.trim();
+    if (d.type === 'list' || d.type === 'slist') {
+      const parts = raw.split(/[,、，]+/).map(s => s.trim()).filter(s => s !== '');
+      const lo = d.minLen || 2, hi = d.maxLen || 8;
+      const vals = d.type === 'list' ? parts.map(Number) : parts;
+      let bad = vals.length < lo || vals.length > hi;
+      if (d.type === 'list') bad = bad || vals.some(x => !Number.isFinite(x) || (!d.float && !Number.isInteger(x)) || Math.abs(x) > 99999);
+      if (d.options) bad = bad || vals.some(x => !d.options.includes(x));
+      const msg = bad ? `${d.label} は${d.options ? ' ' + d.options.join('・') + ' から' : d.type === 'list' ? (d.float ? '数' : '整数') + 'を' : ''} ${lo === hi ? lo : lo + '〜' + hi} 個、カンマで区切って入れてください` : (d.check ? d.check(vals) : '');
+      if (msg) { err = msg; v[d.name] = d.def.slice(); } else v[d.name] = vals;
+    } else if (d.type === 'text') v[d.name] = raw || d.def;
+    else {
+      let x = Number(raw);
+      if (raw === '' || !Number.isFinite(x)) x = d.def;
+      if (d.type !== 'float') x = Math.round(x);
+      v[d.name] = Math.max(d.min, Math.min(d.max, x));
     }
   }
   $('inputErr').textContent = err;
   return v;
 }
 function rebuild() {
-  const ex = EXAMPLES[+$('exSel').value];
   stop();
-  inp = readInputs(ex);
-  prog = ex.body();
-  prepare(prog, { id: 0, loop: 0 });
+  inp = readInputs();
+  floatSet = new Set(ex.floats || []);
+  prog = { body: ex.body(), funcs: ex.funcs ? ex.funcs() : [] };
+  const st = { id: 0, loop: 0 };
+  prepare(prog.body, st);
+  for (const f of prog.funcs) { f.id = 'f' + (st.id++); prepare(f.body, st); }
   T = buildTrace();
+  showPy = TEACHER || ex.kind === EX || ex.kind === SUP;
   buildPython(); drawFlow();
   idx = 0; pending = false; fb = null; answered = new Set(); score = { ok: 0, n: 0 };
-  $('flowWrap').scrollTop = 0;
+  $('flowWrap').scrollTop = 0; $('flowWrap').scrollLeft = 0;
   render();
 }
 function loadExample() {
-  const ex = EXAMPLES[+$('exSel').value];
-  $('desc').textContent = ex.desc;
-  $('inputs').innerHTML = ex.inputs.map(d => d.list
-    ? `<label>${esc(d.label)} <input class="list" type="text" id="in-${d.name}" value="${d.def.join(', ')}"></label>`
-    : `<label>${esc(d.label)} <input type="number" id="in-${d.name}" value="${d.def}" min="${d.min}" max="${d.max}" step="${d.step || 1}"></label>`).join('');
+  ex = LESSONS[+$('lesSel').value].progs[+$('exSel').value];
+  $('desc').innerHTML = `<span class="kind k-${ex.kind === EX ? 'ex' : ex.kind === SUP ? 'sup' : 'task'}">${esc(ex.kind)}</span> ${esc(ex.desc)}`;
+  $('inputs').innerHTML = (ex.inputs || []).map(d => {
+    if (d.type === 'list' || d.type === 'slist') return `<label>${esc(d.label)} <input class="list" type="text" id="in-${d.name}" value="${esc(d.type === 'list' && d.float ? d.def.map(pf).join(', ') : d.def.join(', '))}"></label>`;
+    if (d.type === 'text') return `<label>${esc(d.label)} <input type="text" style="width:110px" id="in-${d.name}" value="${esc(d.def)}"></label>`;
+    return `<label>${esc(d.label)} <input type="number" id="in-${d.name}" value="${d.def}" min="${d.min}" max="${d.max}" step="${d.type === 'float' ? 'any' : d.step || 1}"></label>`;
+  }).join('');
   rebuild();
+}
+function loadLesson() {
+  const les = LESSONS[+$('lesSel').value];
+  $('exSel').innerHTML = les.progs.map((p, i) => `<option value="${i}">${esc(p.kind)}：${esc(p.title)}</option>`).join('');
+  loadExample();
 }
 
 /* ---------- 操作 ---------- */
-$('exSel').innerHTML = EXAMPLES.map((e, i) => `<option value="${i}">${esc(e.title)}</option>`).join('');
+$('lesSel').innerHTML = LESSONS.map((l, i) => `<option value="${i}">${esc(l.title)}</option>`).join('');
+$('lesSel').addEventListener('change', loadLesson);
 $('exSel').addEventListener('change', loadExample);
 $('inputs').addEventListener('change', rebuild);
 $('bFirst').addEventListener('click', () => go(0));
@@ -684,7 +1190,7 @@ for (const [box, sel] of [[$('flowWrap'), '.node'], [$('code'), '.ln']]) {
     });
   }
 }
-loadExample();
+loadLesson();
 </script>
 </body>
 </html>
