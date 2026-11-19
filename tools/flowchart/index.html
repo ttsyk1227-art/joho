@@ -169,6 +169,10 @@ body.printing { height: auto; display: block; }
 .page .edge { stroke: #000; stroke-width: 1.2; }
 .page .ahead { fill: #000; }
 .page .blabel { fill: #000; font-size: 11px; }
+.page .conn { fill: #fff; stroke: #000; stroke-width: 1.3; }
+.page .connt { fill: #000; font-size: 11px; font-weight: 700; }
+.page .connn { fill: #000; font-size: 10.5px; }
+.ppart { font-size: 10pt; font-weight: 400; margin-left: 2mm; }
 @page { size: A4 portrait; margin: 10mm; }
 @media print {
   body.printing { background: #fff; }
@@ -237,6 +241,7 @@ body.printing { height: auto; display: block; }
         <option value="code">プログラムつき</option>
       </select></label>
       <label><input type="checkbox" id="pOut" checked> 実行例を載せる</label>
+      <label><input type="checkbox" id="pSplit" checked> 字が小さくなるときは2枚に分ける</label>
       <button id="pPrint" class="main">🖨 印刷する</button>
       <button id="pBack">← もどる</button>
       <span id="pCount"></span>
@@ -930,6 +935,7 @@ function buildPython() {
 const GEOM = {
   screen: { W: 210, GY: 28, GX: 36, DH: 78, HE: 38, TH: 36, TW: 120, NMIN: 44, NB: 22, NL: 18, LBY: 15 },
   print: { W: 196, GY: 14, GX: 26, DH: 64, HE: 28, TH: 28, TW: 110, NMIN: 32, NB: 12, NL: 16, LBY: 11 },   // 印刷用は間を詰める
+  split: { W: 196, GY: 40, GX: 26, DH: 64, HE: 28, TH: 28, TW: 110, NMIN: 32, NB: 12, NL: 16, LBY: 11 },   // 2枚に分ける図（切れ目に結合子を置けるよう、間を少し空ける）
 };
 let W, GY, GX, DH, HE, TH, TW, NMIN, NB, NL, LBY;
 const useGeom = k => { ({ W, GY, GX, DH, HE, TH, TW, NMIN, NB, NL, LBY } = GEOM[k]); };
@@ -990,11 +996,21 @@ function measureNode(n) {
 
 function flowSVG(layout = 'row') {
   const P = [], pctx = [];   // SVG の部品、break の出口待ち
+  const OB = [], VS = [];    // 箱や文字の上下の範囲、縦の線（2枚に分けるときの切れ目探し用）
+  const rec = pts => {
+    for (let k = 1; k < pts.length; k++) {
+      const [x1, y1] = pts[k - 1], [x2, y2] = pts[k];
+      if (x1 === x2) VS.push({ x: x1, y1: Math.min(y1, y2), y2: Math.max(y1, y2) });
+      else OB.push({ y1: Math.min(y1, y2) - 1, y2: Math.max(y1, y2) + 1 });
+    }
+  };
   const arrowHead = (x1, y1, x2, y2) => {
     const a = Math.atan2(y2 - y1, x2 - x1), s = 8, c = Math.cos(a), d = Math.sin(a);
+    OB.push({ y1: Math.min(y2, y2 - s * d) - 2, y2: Math.max(y2, y2 - s * d) + 2 });   // 矢印の先も切れ目にかからないように
     P.push(`<polygon class="ahead" points="${x2},${y2} ${x2 - s * c + s * .45 * d},${y2 - s * d - s * .45 * c} ${x2 - s * c - s * .45 * d},${y2 - s * d + s * .45 * c}"/>`);
   };
   const line = (pts, arrow) => {
+    rec(pts);
     P.push(`<polyline class="edge" points="${pts.map(p => p.join(',')).join(' ')}"/>`);
     if (arrow) arrowHead(...pts[pts.length - 2], ...pts[pts.length - 1]);
   };
@@ -1004,6 +1020,7 @@ function flowSVG(layout = 'row') {
       lines.map((l, i) => `<tspan x="${cx}" y="${y0 + i * NL}">${esc(l)}</tspan>`).join('') + '</text>';
   };
   const shape = (id, kind, cx, y, w, h, lines) => {
+    OB.push({ y1: y, y2: y + h });
     const x = cx - w / 2; let s;
     const poly = pts => `<polygon class="shape" points="${pts.map(p => p.join(',')).join(' ')}"/>`;
     if (kind === 'term') s = `<rect class="shape" x="${x}" y="${y}" width="${w}" height="${h}" rx="${h / 2}"/>`;
@@ -1015,7 +1032,7 @@ function flowSVG(layout = 'row') {
     else s = `<rect class="shape" x="${x}" y="${y}" width="${w}" height="${h}"/>`;
     P.push(`<g class="node" data-id="${id}">${s}${text(lines, cx, y + h / 2)}</g>`);
   };
-  const label = (id, which, x, y, anchor) =>
+  const label = (id, which, x, y, anchor) => OB.push({ y1: y - 11, y2: y + 3 }) &&
     P.push(`<text class="blabel" id="lb-${id}-${which}" x="${x}" y="${y}" text-anchor="${anchor}">${which === 'yes' ? 'Yes' : 'No'}</text>`);
   const rail = (brk, pts, side = 'R') => pctx[pctx.length - 1].push({ id: brk.id, pts, side });
 
@@ -1097,6 +1114,7 @@ function flowSVG(layout = 'row') {
         for (const r of rails) {
           const rx = r.side === 'L' ? cx - n.m.lx : cx + n.m.rx;
           const pts = [...r.pts, [rx, r.pts[r.pts.length - 1][1]], [rx, ye], [cx, ye]];
+          rec(pts);
           P.push(`<g class="node rail" data-id="${r.id}"><polyline class="shape" points="${pts.map(p => p.join(',')).join(' ')}"/></g>`);
           arrowHead(rx, ye, cx, ye);
         }
@@ -1127,7 +1145,29 @@ function flowSVG(layout = 'row') {
     width = Math.max(width, cx + Math.max(m.R, tw / 2) + pad);
     if (layout === 'row') x0 = cx + Math.max(m.R, tw / 2) + 44; else y0 = y + 16;
   }
-  return { svg: P.join(''), width, H };
+  return { svg: P.join(''), width, H, OB, VS };
+}
+
+// 2枚に分ける切れ目を探す：箱・文字・線の折れ目にかからず、横切る線が少なく、なるべく真ん中に近い高さ
+function findCut(f) {
+  const C = 12;
+  let best = null;
+  for (let y = Math.round(f.H * 0.3); y <= f.H * 0.7; y++) {
+    if (f.OB.some(o => o.y2 > y - C && o.y1 < y + C)) continue;
+    if (f.VS.some(v => (v.y1 > y - C && v.y1 < y + C) || (v.y2 > y - C && v.y2 < y + C))) continue;
+    const xs = [...new Set(f.VS.filter(v => v.y1 <= y - C && v.y2 >= y + C).map(v => v.x))].sort((a, b) => a - b);
+    const score = xs.length * 1000 + Math.abs(y - f.H / 2);
+    if (!best || score < best.score) best = { y, xs, score };
+  }
+  return best;
+}
+// 切れ目の上（1枚目）または下（2枚目）の部分。横切る線には結合子（○A など）を付ける
+function partFig(f, cut, part) {
+  const { y, xs } = cut, r = 9;
+  const conn = xs.map((x, i) => `<circle class="conn" cx="${x}" cy="${y}" r="${r}"/><text class="connt" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central">${'ABCDEFGH'[i]}</text>`).join('');
+  const note = xs.length ? `<text class="connn" x="${xs[xs.length - 1] + r + 5}" y="${y}" dominant-baseline="central">${part === 1 ? '2枚目へつづく' : '1枚目からつづく'}</text>` : '';
+  const y0 = part === 1 ? 0 : y - r - 1, h = part === 1 ? y + r + 1 : f.H - y0;
+  return { svg: f.svg + conn + note, width: f.width, H: h, vb: `0 ${y0} ${f.width} ${h}` };
 }
 
 function drawFlow() {
@@ -1355,7 +1395,7 @@ function closePrint() {
 }
 
 function buildPages() {
-  const range = $('pRange').value, mode = $('pMode').value, withOut = $('pOut').checked;
+  const range = $('pRange').value, mode = $('pMode').value, withOut = $('pOut').checked, split2 = $('pSplit').checked;
   const { les: li, prog: pi } = screenState, list = [];
   LESSONS.forEach((l, i) => l.progs.forEach((p, j) => {
     const ok = range === 'cur' ? i === li && j === pi : range === 'les' ? i === li : range === 'lesK' ? i === li && isTask(p)
@@ -1370,23 +1410,30 @@ function buildPages() {
     useGeom('print');
     const figs = [flowSVG('row')];
     if (prog.funcs.length) figs.push(flowSVG('col'));
+    let split = null;
+    if (split2) {
+      useGeom('split');
+      const sf = flowSVG('col'), cut = findCut(sf);
+      if (cut) split = { f: sf, cut };
+    }
     useGeom('screen');
     const code = mode === 'code' && (TEACHER || !isTask(e));
     if (mode === 'code' && !code) hidden++;
     // 図だけでは値が分からないリスト（「5 個の値のリスト」など）は、データとして書いておく
     const data = (e.inputs || []).filter(d => (d.type === 'list' || d.type === 'slist') && !d.feed)
       .map(d => `${/^[A-Za-z_]\w*$/.test(d.name) && pyLines.some(l => l.trim().startsWith(d.name + ' = [')) ? d.name : d.label} = ${lit(inp[d.name], d.float)}`);
-    return { les: LESSONS[i].title, e, figs, py: pyLines.filter(l => !(mode === 'code' && /^#/.test(l))), code,
+    return { les: LESSONS[i].title, e, figs, split, py: pyLines.filter(l => !(mode === 'code' && /^#/.test(l))), code,
       data, stdin: dump.stdin.slice(), rand: dump.rand.slice(), out: dump.out.slice(), withOut };
   });
-  $('pages').innerHTML = pages.map(pageHTML).join('');
-  $('pages').querySelectorAll('.page').forEach((el, k) => fitPage(el, pages[k]));
-  $('pCount').textContent = `${pages.length} 枚`;
+  $('pages').innerHTML = pages.map(pg => pageHTML(pg)).join('');
+  let splitCount = 0;
+  [...$('pages').querySelectorAll('.page')].forEach((el, k) => { if (fitPage(el, pages[k])) splitCount++; });
+  $('pCount').textContent = `${pages.length + splitCount} 枚` + (splitCount ? `（うち ${splitCount} 本を2枚に分けました）` : '');
   $('pNote').textContent = (hidden ? `課題 ${hidden} 枚は、解答が生徒に見えないよう右の欄を空欄にしています（教員用に ?teacher=1 を付けて開くと、課題もプログラムつきで印刷できます）。 ` : '')
     + '印刷の設定：用紙 A4・縦、倍率 100％（「ページに合わせる」はオフ）。ヘッダーとフッターはオフがおすすめです。';
 }
 
-function pageHTML(pg) {
+function pageHTML(pg, part = 0) {
   const e = pg.e;
   const how = pg.code ? '左のフローチャートと右のプログラムを見くらべて、対応しているところを確かめよう。'
     : '左のフローチャートを読んで、右の欄に Python のプログラムを書こう。';
@@ -1397,32 +1444,60 @@ function pageHTML(pg) {
   return `<section class="page">
   <div class="ph">
     <div class="ptop"><span>${esc(pg.les)}</span><span class="pname"><span></span>年<span></span>組<span></span>番 氏名<span class="nm"></span></span></div>
-    <div class="pt"><span class="pkind">${esc(e.kind)}</span>${esc(e.title)}</div>
+    <div class="pt"><span class="pkind">${esc(e.kind)}</span>${esc(e.title)}${part ? `<span class="ppart">（${part}／2枚目）</span>` : ''}</div>
   </div>
-  <p class="pdesc"><b>${esc(how)}</b> ${esc(e.desc.replace(/（入力する.*?）|（入力が尽きたら.*?）|[^。]*ここで決めて[^。]*。/g, ''))}</p>
-  ${pg.data.length ? `<p class="pdata">使うデータ：${pg.data.map(esc).join('　')}</p>` : ''}
+  <p class="pdesc">${part === 2 ? '<b>1枚目のつづきです。</b>フローチャートは、同じ文字の結合子（○A など）のところでつながっています。'
+    : `<b>${esc(how)}</b> ${esc(e.desc.replace(/（入力する.*?）|（入力が尽きたら.*?）|[^。]*ここで決めて[^。]*。/g, ''))}`}</p>
+  ${pg.data.length && part !== 2 ? `<p class="pdata">使うデータ：${pg.data.map(esc).join('　')}</p>` : ''}
   <div class="pbody">
     <div class="pflow"><div class="pcap">フローチャート</div><div class="pfig"></div></div>
     <div class="pcode">
       <div class="pwrite"><div class="pcap">${pg.code ? 'Python プログラム' : 'Python プログラムを書こう'}</div><div class="prows"></div></div>
-      ${pg.withOut ? `<div class="pout"><div class="pcap">実行例</div>${ins.length ? `<div class="pin">${ins.join('<br>')}</div>` : ''}<pre class="${cols.trim()}">${esc(pg.out.join('\n')) || '（何も表示されない）'}</pre></div>` : ''}
+      ${pg.withOut && part !== 1 ? `<div class="pout"><div class="pcap">実行例</div>${ins.length ? `<div class="pin">${ins.join('<br>')}</div>` : ''}<pre class="${cols.trim()}">${esc(pg.out.join('\n')) || '（何も表示されない）'}</pre></div>` : ''}
     </div>
   </div>
 </section>`;
 }
 
-function fitPage(el, pg) {
-  // フローチャート：枠に入る大きさに縮める（大きくしすぎない）。関数があるときは、横並び・縦並びの大きく見える方を使う
-  // 左の枠の幅は、図に合わせて A4 幅の 50〜64％ の間で決める（残りがプログラムの欄）
-  const flow = el.querySelector('.pflow'), box = el.querySelector('.pfig'), total = el.querySelector('.pbody').clientWidth;
-  const lo = total * 0.5, hi = total * 0.64, extra = 10, bh = box.clientHeight - 6;
-  const sc = f => Math.min((hi - extra) / f.width, bh / f.H, 1.15);
-  const f = pg.figs.reduce((a, b) => (sc(b) > sc(a) ? b : a));
-  const k = sc(f);
-  flow.style.flexBasis = Math.round(Math.max(lo, Math.min(hi, f.width * k + extra))) + 'px';
-  box.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f.width} ${f.H}" preserveAspectRatio="xMidYMin meet" style="max-width:${Math.floor(f.width * k)}px;max-height:${Math.floor(f.H * k)}px" role="img" aria-label="フローチャート">${f.svg}</svg>`;
+const SPLIT_BELOW = 0.8, SPLIT_GAIN = 0.1;   // 縮小率が 0.8 未満で、2枚にすると 0.1 以上大きくなるときに分ける
+
+// 左の枠の幅は、図に合わせて A4 幅の 50〜64％ の間で決める（残りがプログラムの欄）
+function figScale(el, f) {
+  const total = el.querySelector('.pbody').clientWidth, bh = el.querySelector('.pfig').clientHeight - 6;
+  return Math.min((total * 0.64 - 10) / f.width, bh / f.H, 1.15);
+}
+function placeFig(el, f, k) {
+  const total = el.querySelector('.pbody').clientWidth;
+  el.querySelector('.pflow').style.flexBasis = Math.round(Math.max(total * 0.5, Math.min(total * 0.64, f.width * k + 10))) + 'px';
+  el.querySelector('.pfig').innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f.vb || `0 0 ${f.width} ${f.H}`}" preserveAspectRatio="xMidYMin meet" style="max-width:${Math.floor(f.width * k)}px;max-height:${Math.floor(f.H * k)}px" role="img" aria-label="フローチャート">${f.svg}</svg>`;
   el.dataset.scale = k.toFixed(2);
-  // 右の欄：罫線（行番号つき）。プログラムつきのときは、行に合わせて書きこむ
+}
+
+// 1ページに収めるか、2枚に分けるかを決めて配置する。2枚に分けたら true
+function fitPage(el, pg) {
+  // 関数があるときは、横並び・縦並びの大きく見える方を使う
+  const f = pg.figs.reduce((a, b) => (figScale(el, b) > figScale(el, a) ? b : a)), k = figScale(el, f);
+  if (pg.split && k < SPLIT_BELOW) {
+    const p1 = partFig(pg.split.f, pg.split.cut, 1), p2 = partFig(pg.split.f, pg.split.cut, 2);
+    const ks = Math.min(figScale(el, p1), figScale(el, p2));
+    if (ks >= k + SPLIT_GAIN) {
+      el.insertAdjacentHTML('beforebegin', pageHTML(pg, 1));
+      el.insertAdjacentHTML('afterend', pageHTML(pg, 2));
+      const e1 = el.previousElementSibling, e2 = el.nextElementSibling;
+      el.remove();
+      placeFig(e1, p1, ks); placeFig(e2, p2, ks);
+      fillRows(e2, pg, fillRows(e1, pg, 0, false), true);
+      return true;
+    }
+  }
+  placeFig(el, f, k);
+  fillRows(el, pg, 0, true);
+  return false;
+}
+
+// 右の欄：罫線（行番号つき）。プログラムつきのときは、行に合わせて書きこむ。
+// from から書き始め、次に書く位置を返す（2枚に分けたときは、2枚目がそのつづき）。squeeze のときは、残りが入るよう行の高さを詰める
+function fillRows(el, pg, from, squeeze) {
   const rows = el.querySelector('.prows'), H = rows.clientHeight, cw = rows.clientWidth;
   const cols = l => [...l].reduce((a, c) => a + (c.charCodeAt(0) > 255 ? 2 : 1), 0);   // 全角は2文字分
   // 9px でも入らない長い行は、続きを次の行に折り返す（行番号は最初の行だけ）
@@ -1437,22 +1512,23 @@ function fitPage(el, pg) {
     }
     disp.push({ no: first ? k + 1 : '', t: cur, w: true });
   });
-  const need = pg.code ? disp.length : 0;
-  const rh = Math.max(16, Math.min(28, need ? Math.floor(H / need) : 28)), n = Math.floor(H / rh);
+  const rest = pg.code ? disp.slice(from) : [];
+  const rh = Math.max(16, Math.min(28, squeeze && rest.length ? Math.floor(H / rest.length) : 28)), n = Math.floor(H / rh);
   const lineFs = l => Math.max(FMIN, Math.min(11, (cw - 36) / (Math.max(1, cols(l)) * 0.6)));
   const guide = [1, 2, 3].map(g => `<span class="g" style="left:${30 + g * 4 * 11 * 0.6}px"></span>`).join('');
   let html = '';
   for (let r = 0; r < n; r++) {
-    const d = pg.code ? disp[r] : undefined, t = d ? d.t : undefined;
-    html += `<div class="prow" style="height:${rh}px"><i>${d ? d.no : pg.code ? '' : r + 1}</i>${t !== undefined ? `<code style="font-size:${(d.w ? FMIN : lineFs(t)).toFixed(1)}px">${esc(t)}</code>` : ''}${pg.code ? '' : guide}</div>`;
+    const d = pg.code ? rest[r] : undefined, t = d ? d.t : undefined;
+    html += `<div class="prow" style="height:${rh}px"><i>${d ? d.no : pg.code ? '' : from + r + 1}</i>${t !== undefined ? `<code style="font-size:${(d.w ? FMIN : lineFs(t)).toFixed(1)}px">${esc(t)}</code>` : ''}${pg.code ? '' : guide}</div>`;
   }
   rows.innerHTML = html;
+  return from + n;
 }
 
 $('bPrint').addEventListener('click', openPrint);
 $('pBack').addEventListener('click', closePrint);
 $('pPrint').addEventListener('click', () => window.print());
-['pRange', 'pMode', 'pOut'].forEach(id => $(id).addEventListener('change', buildPages));
+['pRange', 'pMode', 'pOut', 'pSplit'].forEach(id => $(id).addEventListener('change', buildPages));
 if (new URLSearchParams(location.search).has('print')) {   // ?print=all などで、開いてすぐプリント画面にする
   const v = new URLSearchParams(location.search).get('print');
   if ([...$('pRange').options].some(o => o.value === v)) $('pRange').value = v;
