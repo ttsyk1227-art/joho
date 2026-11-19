@@ -8,6 +8,9 @@
 #
 # 最初に 1 回だけ、GitHub のリポジトリで次の設定が必要:
 #   Settings → Pages → Build and deployment → Source を「GitHub Actions」にする
+#   ※「Deploy from a branch」のままだと、push のたびに GitHub 標準の「pages build and deployment」も動き、
+#     このワークフローと競合する。後から終わった方が公開されるため、/flowchart/ などが 404 になることがある。
+#     Actions タブに「pages build and deployment」が出るときは、この設定を確かめる。
 name: ブラウザ版アプリを公開
 
 on:
