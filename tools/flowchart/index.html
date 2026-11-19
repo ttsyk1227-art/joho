@@ -120,6 +120,63 @@ button:disabled { opacity: .45; cursor: default; }
 .kind.k-task { background: #d9730d; } .kind.k-sup { background: #6b7280; }
 .frame { font-size: 12px; color: var(--sub); margin: 4px 0 2px; font-weight: 600; }
 .frame.dim, table.dim { opacity: .55; }
+
+/* ---------- A4 プリント ---------- */
+#printView { display: none; }
+body.printing > header, body.printing > main, body.printing > footer { display: none; }
+body.printing #printView { display: block; }
+body.printing { height: auto; display: block; }
+#printBar { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 8px 16px; }
+.pbrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.pbrow label { font-size: 13px; color: var(--sub); display: inline-flex; align-items: center; gap: 6px; }
+#pCount { font-size: 13px; color: var(--sub); }
+#pNote { margin: 4px 0 0; font-size: 12px; color: var(--sub); }
+#pages { padding: 16px; overflow-x: auto; }
+.page {
+  width: 190mm; height: 270mm; margin: 0 auto 16px; padding: 10mm; box-sizing: content-box;
+  background: #fff; color: #000; box-shadow: 0 1px 6px rgba(0,0,0,.25); overflow: hidden;
+  display: flex; flex-direction: column; font-size: 10.5pt; line-height: 1.45;
+}
+.ph { border-bottom: 1.5px solid #000; padding-bottom: 1.5mm; }
+.ptop { display: flex; justify-content: space-between; align-items: flex-end; gap: 4mm; font-size: 9.5pt; }
+.pt { font-size: 14pt; font-weight: 700; margin-top: 1mm; }
+.pkind { display: inline-block; border: 1px solid #000; border-radius: 3mm; padding: 0 2.5mm; font-size: 9pt; margin-right: 2mm; vertical-align: 1px; }
+.pname { font-size: 10pt; white-space: nowrap; }
+.pname span { display: inline-block; border-bottom: 1px solid #000; min-width: 9mm; text-align: center; margin: 0 1mm; }
+.pname span.nm { min-width: 42mm; }
+.pdesc { margin: 2mm 0 0; font-size: 9.5pt; }
+.pdesc b { font-weight: 700; }
+.pdata { margin: 1mm 0 0; font-size: 9.5pt; font-family: Consolas, Menlo, "Liberation Mono", monospace; }
+.pbody { flex: 1; min-height: 0; display: flex; gap: 4mm; margin-top: 2.5mm; }
+.pflow { flex: 0 0 50%; min-width: 0; border: 1px solid #000; display: flex; flex-direction: column; }
+.pcode { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2.5mm; }
+.pcap { font-size: 9pt; font-weight: 700; border-bottom: 1px solid #000; padding: .5mm 2mm; background: #fff; }
+.pfig { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: flex-start; padding: 1.5mm; }
+.pfig svg { width: 100%; height: 100%; }
+.pwrite { flex: 1; min-height: 0; border: 1px solid #000; display: flex; flex-direction: column; }
+.prows { flex: 1; min-height: 0; overflow: hidden; }
+.prow { display: flex; align-items: flex-end; border-bottom: 1px solid #b8b8b8; box-sizing: border-box; position: relative; }
+.prow i { font-style: normal; width: 7mm; flex: none; text-align: right; padding-right: 1.5mm; font-size: 7.5pt; color: #666; align-self: center; }
+.prow code { font-family: Consolas, Menlo, "Liberation Mono", monospace; white-space: pre; overflow: hidden; padding-bottom: .6mm; color: #000; }
+.prow .g { position: absolute; top: 0; bottom: 0; border-left: 1px dotted #d0d0d0; }
+.pout { border: 1px solid #000; flex: none; max-height: 45%; overflow: hidden; display: flex; flex-direction: column; }
+.pout .pin { font-size: 8.5pt; padding: 1mm 2mm 0; }
+.pout pre { margin: 0; padding: 1mm 2mm 1.5mm; font-family: Consolas, Menlo, "Liberation Mono", monospace; font-size: 8.5pt; line-height: 1.35; white-space: pre; overflow: hidden; }
+.pout pre.c2 { column-count: 2; } .pout pre.c3 { column-count: 3; }
+.page .shape { fill: #fff; stroke: #000; stroke-width: 1.3; }
+.page .node.rail .shape { fill: none; }
+.page .node text { fill: #000; font-size: 12.5px; }
+.page .edge { stroke: #000; stroke-width: 1.2; }
+.page .ahead { fill: #000; }
+.page .blabel { fill: #000; font-size: 11px; }
+@page { size: A4 portrait; margin: 10mm; }
+@media print {
+  body.printing { background: #fff; }
+  body.printing #printBar { display: none; }
+  #pages { padding: 0; overflow: visible; }
+  .page { margin: 0; padding: 0; box-shadow: none; break-after: page; page-break-after: always; }
+  .page:last-child { break-after: auto; page-break-after: auto; }
+}
 </style>
 </head>
 <body>
@@ -128,6 +185,7 @@ button:disabled { opacity: .45; cursor: default; }
   <div class="bar">
     <label>回 <select id="lesSel"></select></label>
     <label>プログラム <select id="exSel"></select></label>
+    <button id="bPrint" title="A4 のプリントを作る">🖨 プリント</button>
     <span id="inputs" class="bar"></span>
     <span id="inputErr"></span>
   </div>
@@ -162,6 +220,31 @@ button:disabled { opacity: .45; cursor: default; }
   </div>
   <div class="hint">キーボード：→ 次へ ／ ← 戻る ／ スペース 自動再生。図の記号にマウスを重ねると、対応する Python の行が光ります。</div>
 </footer>
+
+<div id="printView">
+  <div id="printBar">
+    <div class="pbrow">
+      <strong>A4 プリント</strong>
+      <label>範囲 <select id="pRange">
+        <option value="cur">このプログラムだけ</option>
+        <option value="les">この回の例題と課題</option>
+        <option value="lesK">この回の課題だけ</option>
+        <option value="allK">全部の回の課題</option>
+        <option value="all">全部（例題・課題・補充）</option>
+      </select></label>
+      <label>右の欄 <select id="pMode">
+        <option value="blank">書きこみ用（空欄）</option>
+        <option value="code">プログラムつき</option>
+      </select></label>
+      <label><input type="checkbox" id="pOut" checked> 実行例を載せる</label>
+      <button id="pPrint" class="main">🖨 印刷する</button>
+      <button id="pBack">← もどる</button>
+      <span id="pCount"></span>
+    </div>
+    <p id="pNote"></p>
+  </div>
+  <div id="pages"></div>
+</div>
 
 <script>
 'use strict';
@@ -356,7 +439,7 @@ const LESSONS = [
   ] },
   { title: '第6回 リストとwhile', progs: [
     { kind: EX, title: '0 が入力されるまで点数を集める', desc: '回数が決まっていない繰り返し。0 が入力されたら break で繰り返しを抜ける（入力する点数のあとに、自動で 0 が入力されます）。',
-      inputs: [{ name: 'tens', label: '入力する点数', type: 'list', def: [80, 65, 92], minLen: 1, maxLen: 6, check: v => (v[0] === 0 ? '最初の点数は 0 以外にしてください' : '') }],
+      inputs: [{ name: 'tens', label: '入力する点数', type: 'list', feed: true, def: [80, 65, 92], minLen: 1, maxLen: 6, check: v => (v[0] === 0 ? '最初の点数は 0 以外にしてください' : '') }],
       head: ['# 0が入力されるまで点数を集め、集計する'],
       body: () => [
         A('scores ← 空のリスト', 'scores = []', e => { e.scores = []; }),
@@ -378,7 +461,7 @@ const LESSONS = [
         ]),
       ] },
     { kind: K2, title: '数当てゲーム', desc: '当たるまで繰り返す。乱数で決まる答えと、入力する数をここで決めて動きを追える（入力が尽きたら、最後は答えが入力されます）。',
-      inputs: [{ name: 'answer', label: '乱数で決まる答え', def: 42, min: 1, max: 100 }, { name: 'guesses', label: '入力する数', type: 'list', def: [50, 25, 42], minLen: 1, maxLen: 8 }],
+      inputs: [{ name: 'answer', label: '乱数で決まる答え', feed: true, def: 42, min: 1, max: 100 }, { name: 'guesses', label: '入力する数', type: 'list', feed: true, def: [50, 25, 42], minLen: 1, maxLen: 8 }],
       head: ['import random', ''],
       body: () => [
         A('answer ←\n1〜100 の乱数', 'answer = random.randint(1, 100)', (e, inp, io) => { e.answer = inp.answer; io.rand.push(e.answer); }),
@@ -442,8 +525,8 @@ const LESSONS = [
   { title: '第8回 総合課題（ミニ作品）', progs: [
     { kind: EX, title: 'じゃんけんの骨組み（参考例題）', desc: '入力・分岐・繰り返し・関数の組み合わせ。自分の手と、乱数で決まる相手の手をここで決めて動きを追える。※ 課題は自由制作なので、ここには載せていません。',
       inputs: [
-        { name: 'me', label: '自分の手', type: 'slist', def: ['グー', 'パー', 'チョキ'], minLen: 3, maxLen: 3 },
-        { name: 'cpu', label: '相手の手（乱数）', type: 'slist', def: ['チョキ', 'パー', 'グー'], minLen: 3, maxLen: 3, options: ['グー', 'チョキ', 'パー'] }],
+        { name: 'me', label: '自分の手', type: 'slist', feed: true, def: ['グー', 'パー', 'チョキ'], minLen: 3, maxLen: 3 },
+        { name: 'cpu', label: '相手の手（乱数）', type: 'slist', feed: true, def: ['チョキ', 'パー', 'グー'], minLen: 3, maxLen: 3, options: ['グー', 'チョキ', 'パー'] }],
       head: ['import random', ''],
       funcs: () => [{ name: 'judge', params: ['me', 'cpu'], py: 'def judge(me, cpu):', body: [
         IF('me = cpu', 'me == cpu', e => e.me === e.cpu,
@@ -844,7 +927,22 @@ function buildPython() {
 }
 
 /* ---------- フローチャートを描く ---------- */
-const W = 210, GY = 28, GX = 36, DH = 78, HE = 38, TH = 36, TW = 120;
+const GEOM = {
+  screen: { W: 210, GY: 28, GX: 36, DH: 78, HE: 38, TH: 36, TW: 120, NMIN: 44, NB: 22, NL: 18, LBY: 15 },
+  print: { W: 196, GY: 14, GX: 26, DH: 64, HE: 28, TH: 28, TW: 110, NMIN: 32, NB: 12, NL: 16, LBY: 11 },   // 印刷用は間を詰める
+};
+let W, GY, GX, DH, HE, TH, TW, NMIN, NB, NL, LBY;
+const useGeom = k => { ({ W, GY, GX, DH, HE, TH, TW, NMIN, NB, NL, LBY } = GEOM[k]); };
+useGeom('screen');
+
+// elif が続く分岐（3つ以上に分かれる）は、ひし形を縦に並べ、Yes の処理を右にまとめる
+function chainOf(n) {
+  if (!(n.els.length === 1 && n.els[0].t === 'if' && n.els[0].elif)) return null;
+  const lv = []; let c = n;
+  for (;;) { lv.push(c); if (c.els.length === 1 && c.els[0].t === 'if' && c.els[0].elif) c = c.els[0]; else break; }
+  if (lv.some(x => endsBreak(x.then))) return null;   // Yes 側に break があるときは、ふつうの描き方にする
+  return { lv, fin: c.els, finBrk: endsBreak(c.els) };   // 最後の No 側の break は、ループの左側を通って外へ出す
+}
 const vis = b => b.filter(n => n.t !== 'break');
 const endsBreak = b => b.length > 0 && b[b.length - 1].t === 'break';
 let mctx = [];
@@ -855,8 +953,21 @@ function measureBlock(b) {
   return (b.m = { L, R, h });
 }
 function measureNode(n) {
-  const own = Math.max(44, 22 + n.lines.length * 18);
-  if (n.t === 'if') {
+  const own = Math.max(NMIN, NB + n.lines.length * NL);
+  if (n.t === 'if' && chainOf(n)) {
+    const { lv, fin, finBrk } = chainOf(n), tms = lv.map(c => measureBlock(c.then)), fm = measureBlock(fin);
+    if (finBrk && mctx.length) mctx[mctx.length - 1].brkL = true;
+    const maxL = Math.max(...tms.map(t => t.L), W / 2), maxR = Math.max(...tms.map(t => t.R), W / 2);
+    const dr = Math.max(W / 2 + 24, fm.R + GX / 2) + maxL, railX = dr + maxR + 18;
+    const ys = []; let lastE = 0;
+    tms.forEach((t, i) => {
+      ys.push(i ? Math.max(ys[i - 1] + DH + GY, lastE + 14 - DH / 2) : 0);
+      lastE = ys[i] + DH / 2 + 22 + t.h + 12;
+    });
+    const yk = ys[ys.length - 1] + DH, yfe = vis(fin).length ? yk + GY + fm.h : yk;
+    const ymg = Math.max(finBrk ? yfe + 26 : yfe + GY / 2, lastE + 14);
+    n.m = { chain: true, lv, fin, finBrk, ys, dr, railX, ymg, L: Math.max(W / 2, fm.L), R: railX + 8, h: ymg + GY / 2 };
+  } else if (n.t === 'if') {
     const t = measureBlock(n.then), e = measureBlock(n.els);
     if ((endsBreak(n.then) || endsBreak(n.els)) && mctx.length) mctx[mctx.length - 1].brk = true;
     if (!n.els.length && endsBreak(n.then)) {          // Yes が右へ出て、そのままループの外へ
@@ -870,14 +981,14 @@ function measureNode(n) {
       n.m = { L: dl + t.L, R: dr + e.R, h: DH + GY + Math.max(t.h, e.h) + GY, dl, dr };
     }
   } else if (n.t === 'for' || n.t === 'while') {
-    mctx.push({ brk: false });
-    const b = measureBlock(n.body), c = mctx.pop(), r = Math.max(W / 2, b.R);
-    n.m = { L: Math.max(W / 2, b.L), R: r + (c.brk ? 26 : 0), rx: r + 16, brk: c.brk,
-      h: own + GY + (b.h ? b.h + GY : 0) + HE + (c.brk ? 24 : 0), hs: own };
+    mctx.push({ brk: false, brkL: false });
+    const b = measureBlock(n.body), c = mctx.pop(), r = Math.max(W / 2, b.R), l = Math.max(W / 2, b.L);
+    n.m = { L: l + (c.brkL ? 26 : 0), R: r + (c.brk ? 26 : 0), rx: r + 16, lx: l + 16, brk: c.brk || c.brkL,
+      h: own + GY + (b.h ? b.h + GY : 0) + HE + (c.brk || c.brkL ? 24 : 0), hs: own };
   } else n.m = { L: W / 2, R: W / 2, h: own };
 }
 
-function drawFlow() {
+function flowSVG(layout = 'row') {
   const P = [], pctx = [];   // SVG の部品、break の出口待ち
   const arrowHead = (x1, y1, x2, y2) => {
     const a = Math.atan2(y2 - y1, x2 - x1), s = 8, c = Math.cos(a), d = Math.sin(a);
@@ -888,9 +999,9 @@ function drawFlow() {
     if (arrow) arrowHead(...pts[pts.length - 2], ...pts[pts.length - 1]);
   };
   const text = (lines, cx, cy) => {
-    const y0 = cy - (lines.length - 1) * 9;
+    const y0 = cy - (lines.length - 1) * NL / 2;
     return `<text text-anchor="middle" dominant-baseline="central">` +
-      lines.map((l, i) => `<tspan x="${cx}" y="${y0 + i * 18}">${esc(l)}</tspan>`).join('') + '</text>';
+      lines.map((l, i) => `<tspan x="${cx}" y="${y0 + i * NL}">${esc(l)}</tspan>`).join('') + '</text>';
   };
   const shape = (id, kind, cx, y, w, h, lines) => {
     const x = cx - w / 2; let s;
@@ -906,19 +1017,42 @@ function drawFlow() {
   };
   const label = (id, which, x, y, anchor) =>
     P.push(`<text class="blabel" id="lb-${id}-${which}" x="${x}" y="${y}" text-anchor="${anchor}">${which === 'yes' ? 'Yes' : 'No'}</text>`);
-  const rail = (brk, pts) => pctx[pctx.length - 1].push({ id: brk.id, pts });
+  const rail = (brk, pts, side = 'R') => pctx[pctx.length - 1].push({ id: brk.id, pts, side });
 
   const placeBlock = (b, cx, y) => {
     vis(b).forEach((n, i) => { if (i) { line([[cx, y], [cx, y + GY]], true); y += GY; } y = placeNode(n, cx, y); });
     return y;
   };
   const placeNode = (n, cx, y) => {
+    if (n.t === 'if' && n.m.chain) {
+      const { lv, fin, ys } = n.m, xr = cx + n.m.dr, rx = cx + n.m.railX, yM = y + n.m.ymg;
+      let first = null;
+      lv.forEach((c, i) => {
+        const yi = y + ys[i], ymid = yi + DH / 2, top = ymid + 22;
+        shape(c.id, 'if', cx, yi, W, DH, c.lines);
+        line([[cx + W / 2, ymid], [xr, ymid], [xr, top]], true);
+        label(c.id, 'yes', cx + W / 2 + 2, ymid - 7, 'start');
+        label(c.id, 'no', cx + 8, yi + DH + LBY, 'start');
+        const tb = vis(c.then).length ? placeBlock(c.then, xr, top) : top, ee = tb + 12;
+        line([[xr, tb], [xr, ee], [rx, ee]]);
+        if (first === null) first = ee;
+        if (i < lv.length - 1) line([[cx, yi + DH], [cx, y + ys[i + 1]]], true);
+      });
+      const yk = y + ys[ys.length - 1] + DH;
+      let yfe = yk;
+      if (vis(fin).length) { line([[cx, yk], [cx, yk + GY]], true); yfe = placeBlock(fin, cx, yk + GY); }
+      if (n.m.finBrk) rail(fin[fin.length - 1], [[cx, yfe], [cx, yfe + 12]], 'L');
+      else line([[cx, yfe], [cx, yM]]);
+      line([[rx, first], [rx, yM], [cx, yM]], true);
+      line([[cx, yM], [cx, y + n.m.h]]);
+      return y + n.m.h;
+    }
     if (n.t === 'if') {
       shape(n.id, 'if', cx, y, W, DH, n.lines);
       const ym = y + DH / 2, yb = y + DH, yM = y + n.m.h, brk = b => b[b.length - 1];
       if (n.m.side) {
         line([[cx, yb], [cx, yM]]);
-        label(n.id, 'no', cx + 8, yb + 15, 'start');
+        label(n.id, 'no', cx + 8, yb + LBY, 'start');
         label(n.id, 'yes', cx + W / 2 + 2, ym - 7, 'start');
         if (!vis(n.then).length) rail(brk(n.then), [[cx + W / 2, ym]]);
         else {
@@ -929,7 +1063,7 @@ function drawFlow() {
         }
       } else if (!vis(n.els).length) {
         line([[cx, yb], [cx, yb + GY]], true);
-        label(n.id, 'yes', cx + 8, yb + 15, 'start');
+        label(n.id, 'yes', cx + 8, yb + LBY, 'start');
         const yT = placeBlock(n.then, cx, yb + GY);
         line([[cx, yT], [cx, yM]]);
         line([[cx + W / 2, ym], [cx + n.m.bx, ym], [cx + n.m.bx, yM - GY / 2], [cx, yM - GY / 2]], true);
@@ -959,8 +1093,9 @@ function drawFlow() {
       y2 += HE;
       const rails = pctx.pop();
       if (n.m.brk) {
-        const rx = cx + n.m.rx, ye = y2 + 12;
+        const ye = y2 + 12;
         for (const r of rails) {
+          const rx = r.side === 'L' ? cx - n.m.lx : cx + n.m.rx;
           const pts = [...r.pts, [rx, r.pts[r.pts.length - 1][1]], [rx, ye], [cx, ye]];
           P.push(`<g class="node rail" data-id="${r.id}"><polyline class="shape" points="${pts.map(p => p.join(',')).join(' ')}"/></g>`);
           arrowHead(rx, ye, cx, ye);
@@ -976,25 +1111,31 @@ function drawFlow() {
 
   const charts = [{ s: 'start', st: 'はじめ', e: 'end', et: 'おわり', body: prog.body },
     ...prog.funcs.map(f => ({ s: f.id, st: `関数 ${f.name}(${f.params.join(', ')})`, e: f.id + 'x', et: '戻る', body: f.body }))];
-  const pad = 14; let x0 = pad, H = 0;
+  // row：関数の図を右に並べる／col：関数の図を下に並べる（印刷用）
+  const pad = 14; let x0 = pad, y0 = pad, H = 0, width = 0;
   for (const c of charts) {
     mctx = [];
     const m = measureBlock(c.body), tw = Math.max(TW, c.st.length * 10 + 36);
     const cx = x0 + Math.max(m.L, tw / 2);
-    let y = pad;
+    let y = y0;
     shape(c.s, 'term', cx, y, tw, TH, [c.st]); y += TH;
     line([[cx, y], [cx, y + GY]], true); y += GY;
     y = placeBlock(c.body, cx, y);
     line([[cx, y], [cx, y + GY]], true); y += GY;
     shape(c.e, 'term', cx, y, TW, TH, [c.et]); y += TH + pad;
     H = Math.max(H, y);
-    x0 = cx + Math.max(m.R, tw / 2) + 44;
+    width = Math.max(width, cx + Math.max(m.R, tw / 2) + pad);
+    if (layout === 'row') x0 = cx + Math.max(m.R, tw / 2) + 44; else y0 = y + 16;
   }
-  const width = x0 - 44 + pad;
+  return { svg: P.join(''), width, H };
+}
+
+function drawFlow() {
+  const { svg, width, H } = flowSVG('row');
   // 横に広い図は、文字が小さくなりすぎない範囲（8割まで）で縮めて表示する。それ以上は横スクロール
   const fit = $('flowWrap').clientWidth - 24, shown = Math.round(Math.max(width * 0.8, Math.min(width, fit)));
-  document.getElementById('flowWrap').innerHTML =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${shown}" role="img" aria-label="フローチャート">${P.join('')}</svg>`;
+  $('flowWrap').innerHTML =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${H}" width="${shown}" role="img" aria-label="フローチャート">${svg}</svg>`;
 }
 
 /* ---------- 画面の更新 ---------- */
@@ -1122,15 +1263,17 @@ function readInputs() {
   $('inputErr').textContent = err;
   return v;
 }
-function rebuild() {
-  stop();
-  inp = readInputs();
-  floatSet = new Set(ex.floats || []);
-  prog = { body: ex.body(), funcs: ex.funcs ? ex.funcs() : [] };
+function compileProg(e, vals) {
+  ex = e; inp = vals; floatSet = new Set(e.floats || []);
+  prog = { body: e.body(), funcs: e.funcs ? e.funcs() : [] };
   const st = { id: 0, loop: 0 };
   prepare(prog.body, st);
   for (const f of prog.funcs) { f.id = 'f' + (st.id++); prepare(f.body, st); }
   T = buildTrace();
+}
+function rebuild() {
+  stop();
+  compileProg(ex, readInputs());
   showPy = TEACHER || ex.kind === EX || ex.kind === SUP;
   buildPython(); drawFlow();
   idx = 0; pending = false; fb = null; answered = new Set(); score = { ok: 0, n: 0 };
@@ -1191,6 +1334,131 @@ for (const [box, sel] of [[$('flowWrap'), '.node'], [$('code'), '.ln']]) {
   }
 }
 loadLesson();
+
+/* ---------- A4 プリント ---------- */
+const isTask = p => p.kind === K1 || p.kind === K2;
+const defaults = e => Object.fromEntries((e.inputs || []).map(d => [d.name, Array.isArray(d.def) ? d.def.slice() : d.def]));
+let screenState = null;
+
+function openPrint() {
+  stop();
+  screenState = { ex, inp, les: +$('lesSel').value, prog: +$('exSel').value };
+  document.body.classList.add('printing');
+  buildPages();
+  window.scrollTo(0, 0);
+}
+function closePrint() {
+  document.body.classList.remove('printing');
+  $('pages').innerHTML = '';
+  ex = screenState.ex;
+  rebuild();   // 画面のプログラムを元にもどす
+}
+
+function buildPages() {
+  const range = $('pRange').value, mode = $('pMode').value, withOut = $('pOut').checked;
+  const { les: li, prog: pi } = screenState, list = [];
+  LESSONS.forEach((l, i) => l.progs.forEach((p, j) => {
+    const ok = range === 'cur' ? i === li && j === pi : range === 'les' ? i === li : range === 'lesK' ? i === li && isTask(p)
+      : range === 'allK' ? isTask(p) : true;
+    if (ok) list.push([i, j]);
+  }));
+  let hidden = 0;
+  const pages = list.map(([i, j]) => {
+    const e = LESSONS[i].progs[j];
+    compileProg(e, i === li && j === pi ? screenState.inp : defaults(e));
+    buildPython();
+    useGeom('print');
+    const figs = [flowSVG('row')];
+    if (prog.funcs.length) figs.push(flowSVG('col'));
+    useGeom('screen');
+    const code = mode === 'code' && (TEACHER || !isTask(e));
+    if (mode === 'code' && !code) hidden++;
+    // 図だけでは値が分からないリスト（「5 個の値のリスト」など）は、データとして書いておく
+    const data = (e.inputs || []).filter(d => (d.type === 'list' || d.type === 'slist') && !d.feed)
+      .map(d => `${/^[A-Za-z_]\w*$/.test(d.name) && pyLines.some(l => l.trim().startsWith(d.name + ' = [')) ? d.name : d.label} = ${lit(inp[d.name], d.float)}`);
+    return { les: LESSONS[i].title, e, figs, py: pyLines.filter(l => !(mode === 'code' && /^#/.test(l))), code,
+      data, stdin: dump.stdin.slice(), rand: dump.rand.slice(), out: dump.out.slice(), withOut };
+  });
+  $('pages').innerHTML = pages.map(pageHTML).join('');
+  $('pages').querySelectorAll('.page').forEach((el, k) => fitPage(el, pages[k]));
+  $('pCount').textContent = `${pages.length} 枚`;
+  $('pNote').textContent = (hidden ? `課題 ${hidden} 枚は、解答が生徒に見えないよう右の欄を空欄にしています（教員用に ?teacher=1 を付けて開くと、課題もプログラムつきで印刷できます）。 ` : '')
+    + '印刷の設定：用紙 A4・縦、倍率 100％（「ページに合わせる」はオフ）。ヘッダーとフッターはオフがおすすめです。';
+}
+
+function pageHTML(pg) {
+  const e = pg.e;
+  const how = pg.code ? '左のフローチャートと右のプログラムを見くらべて、対応しているところを確かめよう。'
+    : '左のフローチャートを読んで、右の欄に Python のプログラムを書こう。';
+  const ins = [];
+  if (pg.stdin.length) ins.push(`入力：${pg.stdin.map(esc).join('、')}`);
+  if (pg.rand.length) ins.push(`乱数で決まった値：${pg.rand.map(esc).join('、')}`);
+  const n = pg.out.length, cols = n > 20 ? ' c3' : n > 10 ? ' c2' : '';
+  return `<section class="page">
+  <div class="ph">
+    <div class="ptop"><span>${esc(pg.les)}</span><span class="pname"><span></span>年<span></span>組<span></span>番 氏名<span class="nm"></span></span></div>
+    <div class="pt"><span class="pkind">${esc(e.kind)}</span>${esc(e.title)}</div>
+  </div>
+  <p class="pdesc"><b>${esc(how)}</b> ${esc(e.desc.replace(/（入力する.*?）|（入力が尽きたら.*?）|[^。]*ここで決めて[^。]*。/g, ''))}</p>
+  ${pg.data.length ? `<p class="pdata">使うデータ：${pg.data.map(esc).join('　')}</p>` : ''}
+  <div class="pbody">
+    <div class="pflow"><div class="pcap">フローチャート</div><div class="pfig"></div></div>
+    <div class="pcode">
+      <div class="pwrite"><div class="pcap">${pg.code ? 'Python プログラム' : 'Python プログラムを書こう'}</div><div class="prows"></div></div>
+      ${pg.withOut ? `<div class="pout"><div class="pcap">実行例</div>${ins.length ? `<div class="pin">${ins.join('<br>')}</div>` : ''}<pre class="${cols.trim()}">${esc(pg.out.join('\n')) || '（何も表示されない）'}</pre></div>` : ''}
+    </div>
+  </div>
+</section>`;
+}
+
+function fitPage(el, pg) {
+  // フローチャート：枠に入る大きさに縮める（大きくしすぎない）。関数があるときは、横並び・縦並びの大きく見える方を使う
+  // 左の枠の幅は、図に合わせて A4 幅の 50〜64％ の間で決める（残りがプログラムの欄）
+  const flow = el.querySelector('.pflow'), box = el.querySelector('.pfig'), total = el.querySelector('.pbody').clientWidth;
+  const lo = total * 0.5, hi = total * 0.64, extra = 10, bh = box.clientHeight - 6;
+  const sc = f => Math.min((hi - extra) / f.width, bh / f.H, 1.15);
+  const f = pg.figs.reduce((a, b) => (sc(b) > sc(a) ? b : a));
+  const k = sc(f);
+  flow.style.flexBasis = Math.round(Math.max(lo, Math.min(hi, f.width * k + extra))) + 'px';
+  box.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f.width} ${f.H}" preserveAspectRatio="xMidYMin meet" style="max-width:${Math.floor(f.width * k)}px;max-height:${Math.floor(f.H * k)}px" role="img" aria-label="フローチャート">${f.svg}</svg>`;
+  el.dataset.scale = k.toFixed(2);
+  // 右の欄：罫線（行番号つき）。プログラムつきのときは、行に合わせて書きこむ
+  const rows = el.querySelector('.prows'), H = rows.clientHeight, cw = rows.clientWidth;
+  const cols = l => [...l].reduce((a, c) => a + (c.charCodeAt(0) > 255 ? 2 : 1), 0);   // 全角は2文字分
+  // 9px でも入らない長い行は、続きを次の行に折り返す（行番号は最初の行だけ）
+  const FMIN = 9, room = Math.floor((cw - 36) / (FMIN * 0.6)), disp = [];
+  pg.py.forEach((l, k) => {
+    if (cols(l) <= room) { disp.push({ no: k + 1, t: l }); return; }
+    const ind = l.match(/^ */)[0] + '    ';
+    let cur = '', first = true;
+    for (const ch of l) {
+      if (cols(cur + ch) > room) { disp.push({ no: first ? k + 1 : '', t: cur, w: true }); cur = ind; first = false; }
+      cur += ch;
+    }
+    disp.push({ no: first ? k + 1 : '', t: cur, w: true });
+  });
+  const need = pg.code ? disp.length : 0;
+  const rh = Math.max(16, Math.min(28, need ? Math.floor(H / need) : 28)), n = Math.floor(H / rh);
+  const lineFs = l => Math.max(FMIN, Math.min(11, (cw - 36) / (Math.max(1, cols(l)) * 0.6)));
+  const guide = [1, 2, 3].map(g => `<span class="g" style="left:${30 + g * 4 * 11 * 0.6}px"></span>`).join('');
+  let html = '';
+  for (let r = 0; r < n; r++) {
+    const d = pg.code ? disp[r] : undefined, t = d ? d.t : undefined;
+    html += `<div class="prow" style="height:${rh}px"><i>${d ? d.no : pg.code ? '' : r + 1}</i>${t !== undefined ? `<code style="font-size:${(d.w ? FMIN : lineFs(t)).toFixed(1)}px">${esc(t)}</code>` : ''}${pg.code ? '' : guide}</div>`;
+  }
+  rows.innerHTML = html;
+}
+
+$('bPrint').addEventListener('click', openPrint);
+$('pBack').addEventListener('click', closePrint);
+$('pPrint').addEventListener('click', () => window.print());
+['pRange', 'pMode', 'pOut'].forEach(id => $(id).addEventListener('change', buildPages));
+if (new URLSearchParams(location.search).has('print')) {   // ?print=all などで、開いてすぐプリント画面にする
+  const v = new URLSearchParams(location.search).get('print');
+  if ([...$('pRange').options].some(o => o.value === v)) $('pRange').value = v;
+  if (new URLSearchParams(location.search).get('mode') === 'code') $('pMode').value = 'code';
+  openPrint();
+}
 </script>
 </body>
 </html>
