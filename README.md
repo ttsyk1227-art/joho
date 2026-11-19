@@ -28,8 +28,9 @@
 
 - ツールの「🖨 プリント」ボタンから、A4 縦のプリントを作って印刷できます。範囲（このプログラム／この回／全部の課題 など）と、右の欄（書きこみ用の空欄／プログラムつき）を選べます
 - 右の欄は行番号つきの罫線で、字下げの目安になる点線が入ります。実行例（入力と表示）も載せられます
+- 図が長くて字が小さくなるとき（縮小率 0.8 未満）は、自動で2枚に分けます。図は結合子（○A）でつながり、右の欄の行番号は2枚目に続きます（印刷画面のチェックで、分けないこともできます）
 - 印刷の設定は、用紙 A4・縦、倍率 100％（「ページに合わせる」はオフ）にしてください
-- 全36枚（空欄・実行例つき）をまとめた PDF：[prints_student.pdf](tools/flowchart/prints_student.pdf)（[ブラウザで開く](https://ttsyk1227-art.github.io/joho/flowchart/prints_student.pdf)）
+- 全36本（2枚に分けた2本を含めて38ページ。空欄・実行例つき）をまとめた PDF：[prints_student.pdf](tools/flowchart/prints_student.pdf)（[ブラウザで開く](https://ttsyk1227-art.github.io/joho/flowchart/prints_student.pdf)）
 - 課題をプログラムつきで印刷できるのは、`?teacher=1` を付けて開いたときだけです（解答例は生徒用 PDF に入れていません）
 
 ## Python 作品ギャラリー（Colab でできることの紹介）
