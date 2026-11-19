@@ -24,6 +24,14 @@
   - ⚠️ これは「うっかり見えない」ようにするだけの仕組みです。フローチャート自体が解答の手順を示しており、ページのソースを見れば Python も読めます。課題を公開したくない場合は、`index.html` の `LESSONS` から課題を外してください
 - `index.html` 1 ファイルだけで動くので、ダウンロードして開くこともできます
 
+### A4 プリント（左にフローチャート、右にプログラムを書く欄）
+
+- ツールの「🖨 プリント」ボタンから、A4 縦のプリントを作って印刷できます。範囲（このプログラム／この回／全部の課題 など）と、右の欄（書きこみ用の空欄／プログラムつき）を選べます
+- 右の欄は行番号つきの罫線で、字下げの目安になる点線が入ります。実行例（入力と表示）も載せられます
+- 印刷の設定は、用紙 A4・縦、倍率 100％（「ページに合わせる」はオフ）にしてください
+- 全36枚（空欄・実行例つき）をまとめた PDF：[prints_student.pdf](tools/flowchart/prints_student.pdf)（[ブラウザで開く](https://ttsyk1227-art.github.io/joho/flowchart/prints_student.pdf)）
+- 課題をプログラムつきで印刷できるのは、`?teacher=1` を付けて開いたときだけです（解答例は生徒用 PDF に入れていません）
+
 ## Python 作品ギャラリー（Colab でできることの紹介）
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ttsyk1227-art/joho/blob/main/showcase/python_showcase.ipynb)
